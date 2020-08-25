@@ -1,3 +1,5 @@
 .idea
 *.egg-info
 massbank2db/tests/test_DB.sqlite
+.tmp.sqlite
+__pycache__

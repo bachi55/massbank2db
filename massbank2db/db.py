@@ -43,7 +43,7 @@ def create_db(file_pth):
         # Molecules Table
         conn.execute(
             "CREATE TABLE molecules( \
-                 cid               INTEGER PRIMARY KEY, \
+                 cid               INTEGER PRIMARY KEY NOT NULL, \
                  inchi             VARCHAR NOT NULL, \
                  inchikey          VARCHAR NOT NULL, \
                  inchikey1         VARCHAR NOT NULL, \
@@ -62,7 +62,7 @@ def create_db(file_pth):
         # Datasets Meta-information table
         conn.execute(
             "CREATE TABLE datasets( \
-                name                VARCHAR PRIMARY KEY, \
+                name                VARCHAR PRIMARY KEY  NOT NULL, \
                 contributor         VARCHAR NOT NULL, \
                 retention_time_unit VARCHAR NOT NULL, \
                 copyright           VARCHAR, \
@@ -75,13 +75,14 @@ def create_db(file_pth):
                 solvent_B           VARCHAR, \
                 solvent             VARCHAR, \
                 instrument_type     VARCHAR, \
-                instrument          VARCHAR)"
+                instrument          VARCHAR, \
+             PRIMARY KEY())"
         )
 
         # Spectra Meta-information table
         conn.execute(
             "CREATE TABLE spectra_meta( \
-                accession           VARCHAR PRIMARY KEY, \
+                accession           VARCHAR PRIMARY KEY NOT NULL, \
                 dataset             VARCHAR NOT NULL, \
                 record_title        VARCHAR NOT NULL, \
                 molecule            INTEGER NOT NULL, \
@@ -114,8 +115,28 @@ def create_db(file_pth):
                 mf_equal  INTEGER NOT NULL, \
                 mz_diff   FLOAT NOT NULL, \
              FOREIGN KEY(spectrum)  REFERENCES spectra_meta(accession)  ON DELETE CASCADE, \
-             FOREIGN KEY(candidate) REFERENCES molecules(cid)           ON DELETE CASCADE)")
+             FOREIGN KEY(candidate) REFERENCES molecules(cid)           ON DELETE CASCADE, \
+             PRIMARY KEY(spectrum, candidate))")
 
+
+class MassbankDB(object):
+    """
+
+    """
+    def __init__(self, file_pth):
+        self.__conn = sqlite3.connect(file_pth)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, ext_type, exc_value, traceback):
+        if isinstance(exc_value, Exception):
+            self.__conn.rollback()
+
+        self.__conn.close()
+
+    def insert_dataset(self):
+        pass
 
 if __name__ == "__main__":
     create_db("tests/test_DB.sqlite")

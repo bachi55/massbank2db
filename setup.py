@@ -1,4 +1,3 @@
-
 from setuptools import setup, find_packages
 
 setup(
@@ -9,6 +8,7 @@ setup(
 
     # Minimum requirements the package was tested with
     install_requires=[
+        "pandas",
         "setuptools>=46.1"
     ],
 
