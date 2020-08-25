@@ -1,1 +1,3 @@
 .idea
+*.egg-info
+massbank2db/tests/test_DB.sqlite
