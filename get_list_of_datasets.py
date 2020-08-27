@@ -24,6 +24,10 @@
 #
 ####
 
+"""
+Create a database loading a summary of all accessions. It can be used to get an overview how much data is available.
+"""
+
 import pandas as pd
 import argparse
 import os
@@ -32,7 +36,7 @@ import sqlite3
 
 from typing import Optional
 
-from massbank2db.parser import parse_info, get_AC_regex
+from massbank2db.parser import parse_info, get_AC_regex, get_CH_regex
 
 
 def create_temporal_database(file_pth=":memory:") -> sqlite3.Connection:
@@ -51,11 +55,14 @@ def create_temporal_database(file_pth=":memory:") -> sqlite3.Connection:
                  "  solvent_A           VARCHAR,"
                  "  solvent_B           VARCHAR,"
                  "  solvent             VARCHAR,"
-                 "  column_temperature  VARCHAR)")
+                 "  column_temperature  VARCHAR,"
+                 "  inchikey            VARCHAR,"
+                 "  ms_level            VARCHAR,"       
+                 "  retention_time      VARCHAR)")
     return conn
 
 
-def _maintain_parser_output(d: dict, keys_to_keep: Optional[list] = None) -> tuple:
+def _sanitize_parser_output(d: dict, keys_to_keep: Optional[list] = None) -> tuple:
     out = tuple()
 
     if keys_to_keep:
@@ -96,20 +103,27 @@ if __name__ == "__main__":
 
         for pref in row["AccPref"].split(","):
             pref = pref.strip()
-            print(os.path.join(ds_dir, pref + "*.txt"))
+            glob_str = os.path.join(ds_dir, pref + "[0-9]*.txt")
+            print(glob_str)
 
-            for fn in sorted(glob.glob(os.path.join(ds_dir, pref + "*.txt"))):
-                info = parse_info(fn, regex=get_AC_regex())
+            for fn in sorted(glob.glob(glob_str)):
+                info = parse_info(fn, regex={**get_AC_regex(), **get_CH_regex()})
                 if info["solvent_A"] and info["solvent_B"]:
                     info["solvent"] = None
 
-                info = _maintain_parser_output(info, keys_to_keep=["instrument_type", "instrument", "ion_mode",
+                if info["retention_time"]:
+                    rt = "_".join(info["retention_time"])
+                else:
+                    rt = None
+
+                info = _sanitize_parser_output(info, keys_to_keep=["instrument_type", "instrument", "ion_mode",
                                                                    "column_name", "flow_gradient", "flow_rate",
                                                                    "solvent_A", "solvent_B", "solvent",
-                                                                   "column_temperature"])
+                                                                   "column_temperature", "inchikey", "ms_level"])
+                info += (rt,)
 
                 with db_conn:
-                    db_conn.execute("INSERT INTO information VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    db_conn.execute("INSERT INTO information VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                     (fn.split("/")[-1].split(".")[0], row["Dataset"], pref) + info)
 
     db_conn.close()

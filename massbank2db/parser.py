@@ -47,12 +47,31 @@ def get_ms_regex() -> dict:
     return meta_parse
 
 
+def get_CH_regex() -> dict:
+    regex = {
+        "inchikey": '^CH\$LINK:\s+INCHIKEY\s+(.*)$'
+    }
+
+    # meta_parse['name'] = ['^CH\$NAME:\s+(.*)$']
+    # meta_parse['other_names'] = ['^CH\$NAME:\s+(.*)$']
+    # meta_parse['inchikey_id'] = ['^CH\$LINK:\s+INCHIKEY\s+(.*)$']
+    # meta_parse['molecular_formula'] = ['^CH\$FORMULA:\s+(.*)$']
+    # meta_parse['molecular_weight'] = ['^CH\$MOLECULAR_WEIGHT:\s+(.*)$']
+    # meta_parse['pubchem_id'] = ['^CH\$LINK:\s+PUBCHEM\s+CID:(.*)$']
+    # meta_parse['chemspider_id'] = ['^CH\$LINK:\s+CHEMSPIDER\s+(.*)$']
+    # meta_parse['compound_class'] = ['^CH\$COMPOUND_CLASS:\s+(.*)$']
+    # meta_parse['exact_mass'] = ['^CH\$EXACT_MASS:\s+(.*)$']
+    # meta_parse['smiles'] = ['^CH\$SMILES:\s+(.*)$']
+
+    return regex
+
+
 def get_AC_regex() -> dict:
     regex = {'instrument_type':     '^AC\$INSTRUMENT_TYPE:\s+(.*)$',
              'instrument':          '^AC\$INSTRUMENT:\s+(.*)$',
              # Mass Spectrometry
              'collision_energy':    '^AC\$MASS_SPECTROMETRY:\s+COLLISION_ENERGY\s+(.*)$',
-             'ms_level':            '^AC\$MASS_SPECTROMETRY:\s+MS_TYPE\s+\D*(\d*)$',
+             'ms_level':            '^AC\$MASS_SPECTROMETRY:\s+MS_TYPE\s+(MS\d*)$',
              'resolution':          '^AC\$MASS_SPECTROMETRY:\s+RESOLUTION\s+(.*)$',
              'ion_mode':            '^AC\$MASS_SPECTROMETRY:\s+ION_MODE\s+(.*)$',
              'fragmentation_type':  '^AC\$MASS_SPECTROMETRY:\s+FRAGMENTATION_MODE\s+(.*)$',
@@ -62,7 +81,7 @@ def get_AC_regex() -> dict:
              'column_name':         '^AC\$CHROMATOGRAPHY:\s+COLUMN.*NAME\s(.*)$',
              'flow_gradient':       '^AC\$CHROMATOGRAPHY:\s+FLOW.*GRADIENT\s(.*)$',
              'flow_rate':           '^AC\$CHROMATOGRAPHY:\s+FLOW.*RATE\s(.*)$',
-             'retention_time':      '^AC\$CHROMATOGRAPHY:\s+RETENTION.*TIME\s+(\d+[.,]?\d*)\s?($|min|sec)',
+             'retention_time':      '^AC\$CHROMATOGRAPHY:\s+RETENTION.*TIME\s+(\d+[.,]?\d*)\s*($|min|sec)',
              'solvent_A':           '^AC\$CHROMATOGRAPHY:\s+SOLVENT\sA\s(.*)$',
              'solvent_B':           '^AC\$CHROMATOGRAPHY:\s+SOLVENT\sB\s(.*)$',
              'solvent':             '^AC\$CHROMATOGRAPHY:\s+SOLVENT\s(.*)$',
