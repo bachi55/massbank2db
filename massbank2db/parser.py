@@ -27,65 +27,77 @@
 import re
 
 
-def get_meta_regex() -> dict:
+def compile_regex(regex):
+    return [re.compile(rx) for rx in regex]
+
+
+def get_meta_regex(compile=True) -> dict:
     """ Create a dictionary of regex for extracting the meta data for the spectra
     """
-    meta_parse = {'accession': '^ACCESSION:(.*)$',
-                  'copyright': '^COPYRIGHT:\s+(.*)',
-                  'origin': '^origin(?:=|:)(.*)$',
-                  'record_title': '^RECORD_TITLE:\s+(.*)$'}
+    regex = {'accession': ['^ACCESSION:(.*)$'],
+             'copyright': ['^COPYRIGHT:\s+(.*)'],
+             'origin': ['^origin(?:=|:)(.*)$'],
+             'record_title': ['^RECORD_TITLE:\s+(.*)$']}
 
-    return meta_parse
-
-
-def get_ms_regex() -> dict:
-    """ Create a dictionary of regex for extracting the Mass-spectra (MS) information for the spectra
-    """
-    meta_parse = {'precursor_mz': '^MS\$FOCUSED_ION:\s+PRECURSOR_M/Z\s+(\d*[.,]?\d*)$',
-                  'precursor_type': '^MS\$FOCUSED_ION:\s+PRECURSOR_TYPE\s+(.*)$'}
-
-    return meta_parse
-
-
-def get_CH_regex() -> dict:
-    regex = {
-        "inchikey": '^CH\$LINK:\s+INCHIKEY\s+(.*)$'
-    }
-
-    # meta_parse['name'] = ['^CH\$NAME:\s+(.*)$']
-    # meta_parse['other_names'] = ['^CH\$NAME:\s+(.*)$']
-    # meta_parse['inchikey_id'] = ['^CH\$LINK:\s+INCHIKEY\s+(.*)$']
-    # meta_parse['molecular_formula'] = ['^CH\$FORMULA:\s+(.*)$']
-    # meta_parse['molecular_weight'] = ['^CH\$MOLECULAR_WEIGHT:\s+(.*)$']
-    # meta_parse['pubchem_id'] = ['^CH\$LINK:\s+PUBCHEM\s+CID:(.*)$']
-    # meta_parse['chemspider_id'] = ['^CH\$LINK:\s+CHEMSPIDER\s+(.*)$']
-    # meta_parse['compound_class'] = ['^CH\$COMPOUND_CLASS:\s+(.*)$']
-    # meta_parse['exact_mass'] = ['^CH\$EXACT_MASS:\s+(.*)$']
-    # meta_parse['smiles'] = ['^CH\$SMILES:\s+(.*)$']
+    if compile:
+        regex = {k: compile_regex(v) for k, v in regex.items()}
 
     return regex
 
 
-def get_AC_regex() -> dict:
-    regex = {'instrument_type':     '^AC\$INSTRUMENT_TYPE:\s+(.*)$',
-             'instrument':          '^AC\$INSTRUMENT:\s+(.*)$',
+def get_ms_regex(compile=True) -> dict:
+    """ Create a dictionary of regex for extracting the Mass-spectra (MS) information for the spectra
+    """
+    regex = {'precursor_mz': ['^MS\$FOCUSED_ION:\s+PRECURSOR_M/Z\s+(\d*[.,]?\d*)$'],
+             'precursor_type': ['^MS\$FOCUSED_ION:\s+PRECURSOR_TYPE\s+(.*)$'],
+             'base_peak': ['^MS\$FOCUSED_ION:\s+BASE_PEAK\s+(\d*[.,]?\d*)$']}
+
+    if compile:
+        regex = {k: compile_regex(v) for k, v in regex.items()}
+
+    return regex
+
+
+def get_CH_regex(compile=True) -> dict:
+    regex = {
+        "name": ['^CH\$NAME:\s+(.*)$'],
+        "molecular_formula": ['^CH\$FORMULA:\s+(.*)$'],
+        "molecular_weight": ['^CH\$MOLECULAR_WEIGHT:\s+(.*)$'],
+        "pubchem_id": ['^CH\$LINK:\s+PUBCHEM\s+CID:(.*)$'],  # TODO: Handle more formats with additional expressions.
+        "exact_mass": ['^CH\$EXACT_MASS:\s+(.*)$'],
+        "smiles": ['^CH\$SMILES:\s+(.*)$'],
+        "inchikey": ['^CH\$LINK:\s+INCHIKEY\s+(.*)$'],
+    }
+
+    if compile:
+        regex = {k: compile_regex(v) for k, v in regex.items()}
+
+    return regex
+
+
+def get_AC_regex(compile=True) -> dict:
+    regex = {'instrument_type':     ['^AC\$INSTRUMENT_TYPE:\s+(.*)$'],
+             'instrument':          ['^AC\$INSTRUMENT:\s+(.*)$'],
              # Mass Spectrometry
-             'collision_energy':    '^AC\$MASS_SPECTROMETRY:\s+COLLISION_ENERGY\s+(.*)$',
-             'ms_level':            '^AC\$MASS_SPECTROMETRY:\s+MS_TYPE\s+(MS\d*)$',
-             'resolution':          '^AC\$MASS_SPECTROMETRY:\s+RESOLUTION\s+(.*)$',
-             'ion_mode':            '^AC\$MASS_SPECTROMETRY:\s+ION_MODE\s+(.*)$',
-             'fragmentation_type':  '^AC\$MASS_SPECTROMETRY:\s+FRAGMENTATION_MODE\s+(.*)$',
-             'mass_accuracy':       '^AC\$MASS_SPECTROMETRY:\s+ACCURACY\s+(.*)$',
-             'mass_error':          '^AC\$MASS_SPECTROMETRY:\s+ERROR\s+(.*)$',
+             'collision_energy':    ['^AC\$MASS_SPECTROMETRY:\s+COLLISION_ENERGY\s+(.*)$'],
+             'ms_type':             ['^AC\$MASS_SPECTROMETRY:\s+MS_TYPE\s+(MS\d*)$'],
+             'resolution':          ['^AC\$MASS_SPECTROMETRY:\s+RESOLUTION\s+(.*)$'],
+             'ion_mode':            ['^AC\$MASS_SPECTROMETRY:\s+ION_MODE\s+(.*)$'],
+             'fragmentation_type':  ['^AC\$MASS_SPECTROMETRY:\s+FRAGMENTATION_MODE\s+(.*)$'],
+             'mass_accuracy':       ['^AC\$MASS_SPECTROMETRY:\s+ACCURACY\s+(.*)$'],
+             'mass_error':          ['^AC\$MASS_SPECTROMETRY:\s+ERROR\s+(.*)$'],
              # Chromatography
-             'column_name':         '^AC\$CHROMATOGRAPHY:\s+COLUMN.*NAME\s(.*)$',
-             'flow_gradient':       '^AC\$CHROMATOGRAPHY:\s+FLOW.*GRADIENT\s(.*)$',
-             'flow_rate':           '^AC\$CHROMATOGRAPHY:\s+FLOW.*RATE\s(.*)$',
-             'retention_time':      '^AC\$CHROMATOGRAPHY:\s+RETENTION.*TIME\s+(\d+[.,]?\d*)\s*($|min|sec)',
-             'solvent_A':           '^AC\$CHROMATOGRAPHY:\s+SOLVENT\sA\s(.*)$',
-             'solvent_B':           '^AC\$CHROMATOGRAPHY:\s+SOLVENT\sB\s(.*)$',
-             'solvent':             '^AC\$CHROMATOGRAPHY:\s+SOLVENT\s(.*)$',
-             'column_temperature':  '^AC\$CHROMATOGRAPHY:\s+COLUMN.*TEMPERATURE\s(.*)$'}
+             'column_name':         ['^AC\$CHROMATOGRAPHY:\s+COLUMN.*NAME\s(.*)$'],
+             'flow_gradient':       ['^AC\$CHROMATOGRAPHY:\s+FLOW.*GRADIENT\s(.*)$'],
+             'flow_rate':           ['^AC\$CHROMATOGRAPHY:\s+FLOW.*RATE\s(.*)$'],
+             'retention_time':      ['^AC\$CHROMATOGRAPHY:\s+RETENTION.*TIME\s+(\d+[.,]?\d*)\s*($|min|sec)'],
+             'solvent_A':           ['^AC\$CHROMATOGRAPHY:\s+SOLVENT\sA\s(.*)$'],
+             'solvent_B':           ['^AC\$CHROMATOGRAPHY:\s+SOLVENT\sB\s(.*)$'],
+             'solvent':             ['^AC\$CHROMATOGRAPHY:\s+SOLVENT\s(.*)$'],
+             'column_temperature':  ['^AC\$CHROMATOGRAPHY:\s+COLUMN.*TEMPERATURE\s(.*)$']}
+
+    if compile:
+        regex = {k: compile_regex(v) for k, v in regex.items()}
 
     return regex
 
@@ -126,6 +138,8 @@ def parse_peaks(msfn: str):
     :param msfn:
     :return:
     """
+    # TODO: Check whether we are parsing peaks or annotations
+
     with open(msfn, "r") as msfile:
         line = msfile.readline()
         while not line.startswith("PK$NUM_PEAK:"):

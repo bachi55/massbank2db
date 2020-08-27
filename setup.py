@@ -4,7 +4,7 @@ setup(
     name="massbank2db",
     version="0.0.1",
     license="MIT",
-    packages=find_packages(exclude=["tests", "examples", "*.ipynb"]),
+    packages=find_packages(exclude=["tests", "examples", "*.ipynb", "get_list_of_datasets.py"]),
 
     # Minimum requirements the package was tested with
     install_requires=[

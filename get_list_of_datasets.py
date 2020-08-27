@@ -37,29 +37,7 @@ import sqlite3
 from typing import Optional
 
 from massbank2db.parser import parse_info, get_AC_regex, get_CH_regex
-
-
-def create_temporal_database(file_pth=":memory:") -> sqlite3.Connection:
-    conn = sqlite3.connect(file_pth)
-    conn.execute("DROP TABLE IF EXISTS information")
-    conn.execute("CREATE TABLE information ("
-                 "  accession           VARCHAR NOT NULL PRIMARY KEY,"
-                 "  contributor         VARCHAR NOT NULL,"
-                 "  accession_prefix    VARCHAR NOT NULL,"
-                 "  instrument_type     VARCHAR NOT NULL,"
-                 "  instrument          VARCHAR NOT NULL,"
-                 "  ion_mode            VARCHAR NOT NULL,"
-                 "  column_name         VARCHAR,"
-                 "  flow_gradient       VARCHAR,"
-                 "  flow_rate           VARCHAR,"
-                 "  solvent_A           VARCHAR,"
-                 "  solvent_B           VARCHAR,"
-                 "  solvent             VARCHAR,"
-                 "  column_temperature  VARCHAR,"
-                 "  inchikey            VARCHAR,"
-                 "  ms_level            VARCHAR,"       
-                 "  retention_time      VARCHAR)")
-    return conn
+from massbank2db.db import get_temporal_database
 
 
 def _sanitize_parser_output(d: dict, keys_to_keep: Optional[list] = None) -> tuple:
@@ -96,7 +74,7 @@ if __name__ == "__main__":
         .rename({1: "Dataset", 4: "AccPref"}, axis=1)  # type: pd.DataFrame
 
     # Load all accession into a temporal database
-    db_conn = create_temporal_database(".tmp.sqlite")
+    db_conn = get_temporal_database(".tmp.sqlite")
 
     for idx, row in mbds.iterrows():
         ds_dir = os.path.join(args.massbank_dir, row["Dataset"])
