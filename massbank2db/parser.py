@@ -34,9 +34,9 @@ def compile_regex(regex):
 def get_meta_regex(compile=True) -> dict:
     """ Create a dictionary of regex for extracting the meta data for the spectra
     """
-    regex = {'accession': ['^ACCESSION:(.*)$'],
-             'copyright': ['^COPYRIGHT:\s+(.*)'],
-             'origin': ['^origin(?:=|:)(.*)$'],
+    regex = {'accession':    ['^ACCESSION:(.*)$'],
+             'copyright':    ['^COPYRIGHT:\s+(.*)'],
+             'origin':       ['^origin(?:=|:)(.*)$'],
              'record_title': ['^RECORD_TITLE:\s+(.*)$']}
 
     if compile:
@@ -48,9 +48,9 @@ def get_meta_regex(compile=True) -> dict:
 def get_ms_regex(compile=True) -> dict:
     """ Create a dictionary of regex for extracting the Mass-spectra (MS) information for the spectra
     """
-    regex = {'precursor_mz': ['^MS\$FOCUSED_ION:\s+PRECURSOR_M/Z\s+(\d*[.,]?\d*)$'],
-             'precursor_type': ['^MS\$FOCUSED_ION:\s+PRECURSOR_TYPE\s+(.*)$'],
-             'base_peak': ['^MS\$FOCUSED_ION:\s+BASE_PEAK\s+(\d*[.,]?\d*)$']}
+    regex = {'precursor_mz':    ['^MS\$FOCUSED_ION:\s+PRECURSOR_M/Z\s+(\d*[.,]?\d*)$'],
+             'precursor_type':  ['^MS\$FOCUSED_ION:\s+PRECURSOR_TYPE\s+(.*)$'],
+             'base_peak':       ['^MS\$FOCUSED_ION:\s+BASE_PEAK\s+(\d*[.,]?\d*)$']}
 
     if compile:
         regex = {k: compile_regex(v) for k, v in regex.items()}
@@ -60,13 +60,16 @@ def get_ms_regex(compile=True) -> dict:
 
 def get_CH_regex(compile=True) -> dict:
     regex = {
-        "name": ['^CH\$NAME:\s+(.*)$'],
+        "name":              ['^CH\$NAME:\s+(.*)$'],
         "molecular_formula": ['^CH\$FORMULA:\s+(.*)$'],
-        "molecular_weight": ['^CH\$MOLECULAR_WEIGHT:\s+(.*)$'],
-        "pubchem_id": ['^CH\$LINK:\s+PUBCHEM\s+CID:(.*)$'],  # TODO: Handle more formats with additional expressions.
-        "exact_mass": ['^CH\$EXACT_MASS:\s+(.*)$'],
-        "smiles": ['^CH\$SMILES:\s+(.*)$'],
-        "inchikey": ['^CH\$LINK:\s+INCHIKEY\s+(.*)$'],
+        "molecular_weight":  ['^CH\$MOLECULAR_WEIGHT:\s+(.*)$'],
+        "pubchem_id":        ['^CH\$LINK:\s+PUBCHEM\s+(CID|SID):(\d+)$',
+                              '^CH\$LINK:\s+PUBCHEM\s+(CID):(\d+)\s+SID:\d+$',
+                              '^CH\$LINK:\s+PUBCHEM\s+SID:\d+\s+(CID):(\d+)$'],
+        "exact_mass":        ['^CH\$EXACT_MASS:\s+(.*)$'],
+        "smiles":            ['^CH\$SMILES:\s+(.*)$'],
+        "inchikey":          ['^CH\$LINK:\s+INCHIKEY\s+(.*)$'],
+        "inchi":             ['^CH\$LINK:\s+IUPAC\s+(.*)$']
     }
 
     if compile:

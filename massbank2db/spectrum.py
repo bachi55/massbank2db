@@ -34,9 +34,77 @@ class MBSpectrum(object):
     def __init__(self, fn):
         self._fn = fn
         self._mb_raw = self._read_mb_file(self._fn)
-        self._meta_information, i = self._parse_meta_information(
+        meta_information, i = self._parse_meta_information(
             self._mb_raw, {**get_meta_regex(), **get_ms_regex(), **get_CH_regex(), **get_AC_regex()})
-        self._peaks = self._parse_peaks(self._mb_raw[i:])
+        self._meta_information = self._sanitize_meta_information(meta_information)
+        self._mz, self._int, _ = map(list, zip(*self._parse_peaks(self._mb_raw[i:])))
+
+    def get(self, key, default=None):
+        return self._meta_information.get(key, default)
+
+    def set(self, key, value):
+        self._meta_information[key] = value
+
+    def update_molecule_structure_information_using_pubchem(self, db_conn):
+        """
+        Information of the molecular structure are extracted from PubChem. We use the CID (if provided) or the InChIKey
+        provided in the Massbank file to find the compound in PubChem. The motivation is, that we have SMILES
+        information coming from a single source and therefore being consistent.
+
+        :param db_conn: sqlite.Connection, with a local PubChem DB stored in an SQLite file.
+
+        :return: boolean, indicating whether an update could be performed.
+        """
+
+        # inchi, exact mass, molecular weight, molecular formula, inchikey, cid (pubchem), smiles (canonical),
+        # smiles (isomeric)
+
+        if self.get("pubchem_id"):
+            id, id_type = self.get("pubchem_id")
+        elif self.get("inchikey"):
+            id, id_type = self.get("inchikey"), "inchikey"
+        else:
+            print("WARNING: Cannot update molecule structure information for '%s' as no id defined, i.e. pubchem or "
+                  "inchikey." % self.get("accession"))
+            return False
+
+        # Fetch information from local DB
+        rows = db_conn.execute("SELECT InChI, InChIKey, SMILES_CAN, SMILES_ISO, exact_mass, molecular_formula "
+                               "    FROM compounds"
+                               "    WHERE ? is ?", (id_type, id)).fetchall()
+
+        if not len(rows):
+            print("WARNING: Could not find any compound with {}={} for {}.".format(id_type, id, self.get("accession")))
+            return False
+
+        # Update the information
+        for c, name in enumerate(["inchi", "inchikey", "smiles_can", "smiles", "exact_mass", "molecular_formula"]):
+            self.set(name, rows[0][c])
+
+        return True
+
+    @staticmethod
+    def _sanitize_meta_information(meta_info_in):
+        meta_info_out = {}
+        for k, v in meta_info_in.items():
+            if v is None:
+                continue
+
+            if len(v) == 0:
+                print("WARNING: Empty information for '%s':" % k, v)
+                continue
+
+            if len(v) == 1:
+                meta_info_out[k] = v[0]
+            else:
+                if k == "retention_time":
+                    meta_info_out["retention_time"] = float(v[0])
+                    meta_info_out["retention_time_unit"] = v[1]
+                elif k == "pubchem_id":
+                    meta_info_out["pubchem_id"] = (v[1], v[0])  # (id-type, id), e.g. (23525, SID) or (92, CID)
+                else:
+                    raise NotImplemented("Multiple outputs for information '%s'.")
+        return meta_info_out
 
     @staticmethod
     def _read_mb_file(fn):
@@ -51,7 +119,7 @@ class MBSpectrum(object):
         while not lines[i].startswith("PK$NUM_PEAK:"):
             for information, rxs in regex.items():
                 if not meta[information]:
-                    # Match the different patterns for the given information
+                    # Match the different patterns for the given information (stop after first match)
                     match = None
                     j = 0
                     while (not match) and (j < len(rxs)):

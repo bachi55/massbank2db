@@ -155,7 +155,7 @@ def get_temporal_database(file_pth=":memory:") -> sqlite3.Connection:
                  "  column_temperature  VARCHAR,"
                  "  inchikey            VARCHAR NOT NULL,"
                  "  ms_level            VARCHAR,"       
-                 "  retention_time      VARCHAR)")
+                 "  retention_time      FLOAT)")
 
     return conn
 
@@ -164,8 +164,17 @@ class MassbankDB(object):
     """
 
     """
-    def __init__(self, file_pth, only_with_rt=True, only_ms2=False, min_number_of_unique_compounds_per_dataset=50):
+    def __init__(self, file_pth, only_with_rt=True, only_ms2=True, min_number_of_unique_compounds_per_dataset=50,
+                 pubchem_file_pth=None):
         self.__conn = sqlite3.connect(file_pth)
+
+        if pubchem_file_pth:
+            self.__pc_conn = sqlite3.connect(pubchem_file_pth)
+        else:
+            self.__pc_conn = None
+
+        if not (only_with_rt and only_ms2):
+            raise NotImplementedError("The current filtering only includes accessions with MS2 and RTs.")
 
         # Different filters to exclude entries from the database
         self.__only_with_rt = only_with_rt
@@ -176,12 +185,18 @@ class MassbankDB(object):
         return self
 
     def __exit__(self, ext_type, exc_value, traceback):
+        # Rollback Massbank database in case of an error
         if isinstance(exc_value, Exception):
             self.__conn.rollback()
 
+        # Close connection to the Massbank database
         self.__conn.close()
 
-    def insert_dataset(self, accession_prefix, contributor, base_path):
+        # Close connection to the pubchem database
+        if self.__pc_conn:
+            self.__pc_conn.close()
+
+    def insert_dataset(self, accession_prefix, contributor, base_path, pubchem_):
         """
         Insert all accession of the specified contributor with specified prefix to the database. Each contributor and
         each corresponding accession prefix represents a separate dataset. Furthermore, different chromatographic (LC)
@@ -202,42 +217,72 @@ class MassbankDB(object):
         :param base_path:
         :return:
         """
-        def _add_info_to_filter_db(filter_db_conn, info):
-            acc = os.path.basename(msfn).split(".")[0]
-
+        def _add_spec_to_filter_db(spec):
             # Specify the solvent information
-            solvent_A = info["solvent_A"]
-            solvent_B = info["solvent_B"]
+            solvent_A = spec.get("solvent_A")
+            solvent_B = spec.get("solvent_B")
             if solvent_A and solvent_B:
                 solvent = None
             else:
-                solvent = info["solvent"]
+                solvent = spec.get("solvent")
 
-            # Sanitize the RT information
-            rt = info["retention_time"]
-            if rt:
-                rt = rt[0]
+            new_row = (acc, contributor, accession_prefix, spec.get("instrument_type"), spec.get("instrument"),
+                       spec.get("ion_mode"), spec.get("column_name"), spec.get("flow_gradient"), spec.get("flow_rate"),
+                       solvent_A, solvent_B, solvent, spec.get("column_temperature"), spec.get("inchikey"),
+                       spec.get("ms_type"), spec.get("retention_time"))
 
-            new_row = (acc, contributor, accession_prefix) + info["instrument_type"] + info["instrument"] + \
-                      info["ion_mode"] + info["column_name"] + info["flow_gradient"] + info["flow_rate"] + \
-                      (solvent_A, solvent_B, solvent) + info["column_temperature"] + info["inchikey"] + \
-                      info["ms_type"] + (rt, )
-
-            filter_db_conn.execute("INSERT INTO information VALUES(%s)" % tuple(",".join(['?'] * len(new_row))),
+            filter_db_conn.execute("INSERT INTO information VALUES(%s)" % (",".join(["?"] * len(new_row)),),
                                    new_row)
 
-        filter_db_conn = get_temporal_database()  # in memory
+        # ================================================================
+        # Build up a temporary database to filter and separate accessions:
+        # ================================================================
+        # - group accessions by their MS and LC configuration --> each combination becomes a separate dataset
+        # - remove groups of accessions, where we have less than a certain number
+        #   (see 'min_number_of_unique_compounds_per_dataset')
+        filter_db_conn = get_temporal_database(".tmp2.sqlite")  # in memory
+        specs = {}
+        with filter_db_conn:
+            for msfn in glob.iglob(os.path.join(base_path, contributor, accession_prefix + "[0-9]*.txt")):
+                acc = os.path.basename(msfn).split(".")[0]
+                specs[acc] = MBSpectrum(msfn)
+                assert specs[acc].get("accession") == acc
 
-        for msfn in glob.iglob(os.path.join(base_path, contributor, accession_prefix + "[0-9]*.txt")):
-            spec = MBSpectrum(msfn)
+                if not specs[acc].get("inchikey"):
+                    print("WARNING: No InChIKey for '%s'." % os.path.basename(msfn))
+                    continue
 
-            if not spec._meta_information["inchikey"]:
-                print("WARNING: No InChIKey for '%s'." % os.path.basename(msfn))
+                _add_spec_to_filter_db(specs[acc])
+
+        # =====================
+        # Group the accessions:
+        # =====================
+        cur = filter_db_conn.execute(
+            "SELECT COUNT(DISTINCT inchikey) AS num_unique_molecules, GROUP_CONCAT(accession) AS accessions \
+                FROM information \
+                WHERE retention_time IS NOT NULL AND ms_level IS 'MS2' \
+                GROUP BY ion_mode, instrument, instrument_type, column_name, column_temperature, flow_gradient, \
+                         flow_rate, solvent_A, solvent_B")
+
+        # ============================================
+        # Include the accessions as separate datasets:
+        # ============================================
+        for row in cur.fetchall():
+            if row[0] < self.__min_number_of_unique_compounds_per_dataset:
                 continue
 
-            _add_info_to_filter_db(filter_db_conn, spec)
+            for acc in row[1].split(","):
+                # -----------------------------------------------------------------------------
+                # Update the molecule structure information in the spectrum file using Pubchem:
+                # -----------------------------------------------------------------------------
+                specs[acc].update_molecule_structure_information_using_pubchem(self.__pc_conn)
 
-            print("bla")
+
+                "spectra_candidates", "spectra_peaks", "spectra_raw_rts", "spectra_meta", "datasets",
+                "molecules"
+
+
+        print("bla")
 
 
 if __name__ == "__main__":
