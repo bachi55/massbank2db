@@ -27,6 +27,7 @@
 import sqlite3
 import os
 import glob
+import re
 
 from massbank2db.spectrum import MBSpectrum
 
@@ -54,11 +55,8 @@ def create_db(file_pth):
                  inchi             VARCHAR NOT NULL, \
                  inchikey          VARCHAR NOT NULL, \
                  inchikey1         VARCHAR NOT NULL, \
-                 inchikey2         VARCHAR NOT NULL, \
-                 inchikey3         VARCHAR NOT NULL, \
                  smiles_iso        VARCHAR NOT NULL, \
                  smiles_can        VARCHAR NOT NULL, \
-                 molecular_weight  FLOAT NOT NULL, \
                  exact_mass        FLOAT NOT NULL, \
                  molecular_formula VARCHAR NOT NULL)")
         conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey_index ON molecules(inchikey)")
@@ -119,9 +117,9 @@ def create_db(file_pth):
         # Spectra Peak Information table
         conn.execute(
             "CREATE TABLE spectra_peaks( \
+                spectrum  VARCHAR NOT NULL, \
                 mz        FLOAT NOT NULL, \
                 intensity FLOAT NOT NULL, \
-                spectrum  VARCHAR NOT NULL, \
              FOREIGN KEY(spectrum) REFERENCES spectra_meta(accession) ON DELETE CASCADE)")
 
         # Spectra candidate information
@@ -164,12 +162,12 @@ class MassbankDB(object):
     """
 
     """
-    def __init__(self, file_pth, only_with_rt=True, only_ms2=True, min_number_of_unique_compounds_per_dataset=50,
-                 pubchem_file_pth=None):
+    def __init__(self, file_pth, only_with_rt=True, only_ms2=True, only_with_pubchem_info=True,
+                 min_number_of_unique_compounds_per_dataset=50, pubchem_dbfn=None):
         self.__conn = sqlite3.connect(file_pth)
 
-        if pubchem_file_pth:
-            self.__pc_conn = sqlite3.connect(pubchem_file_pth)
+        if pubchem_dbfn:
+            self.__pc_conn = sqlite3.connect(pubchem_dbfn)
         else:
             self.__pc_conn = None
 
@@ -179,6 +177,7 @@ class MassbankDB(object):
         # Different filters to exclude entries from the database
         self.__only_with_rt = only_with_rt
         self.__only_ms2 = only_ms2
+        self.__only_with_pubchem_info = only_with_pubchem_info
         self.__min_number_of_unique_compounds_per_dataset = min_number_of_unique_compounds_per_dataset
 
     def __enter__(self):
@@ -192,11 +191,19 @@ class MassbankDB(object):
         # Close connection to the Massbank database
         self.__conn.close()
 
-        # Close connection to the pubchem database
+        # Close connection to the PubChem database
         if self.__pc_conn:
             self.__pc_conn.close()
 
-    def insert_dataset(self, accession_prefix, contributor, base_path, pubchem_):
+    def _get_db_value_placeholders(self, n):
+        """
+
+        :param n:
+        :return:
+        """
+        return ",".join(['?'] * n)
+
+    def insert_dataset(self, accession_prefix, contributor, base_path):
         """
         Insert all accession of the specified contributor with specified prefix to the database. Each contributor and
         each corresponding accession prefix represents a separate dataset. Furthermore, different chromatographic (LC)
@@ -240,7 +247,7 @@ class MassbankDB(object):
         # - group accessions by their MS and LC configuration --> each combination becomes a separate dataset
         # - remove groups of accessions, where we have less than a certain number
         #   (see 'min_number_of_unique_compounds_per_dataset')
-        filter_db_conn = get_temporal_database(".tmp2.sqlite")  # in memory
+        filter_db_conn = get_temporal_database()  # in memory
         specs = {}
         with filter_db_conn:
             for msfn in glob.iglob(os.path.join(base_path, contributor, accession_prefix + "[0-9]*.txt")):
@@ -267,28 +274,123 @@ class MassbankDB(object):
         # ============================================
         # Include the accessions as separate datasets:
         # ============================================
+        acc_pref_idx = 1
         for row in cur.fetchall():
             if row[0] < self.__min_number_of_unique_compounds_per_dataset:
                 continue
 
             for acc in row[1].split(","):
                 # -----------------------------------------------------------------------------
-                # Update the molecule structure information in the spectrum file using Pubchem:
+                # Update the molecule structure information in the spectrum file using PubChem:
                 # -----------------------------------------------------------------------------
-                specs[acc].update_molecule_structure_information_using_pubchem(self.__pc_conn)
+                if self.__only_with_pubchem_info and \
+                        not specs[acc].update_molecule_structure_information_using_pubchem(self.__pc_conn):
+                    # del specs[acc]  # remove the spectrum, if its structure information could not be updated
+                    continue
+
+                # -----------------------------------
+                # Insert the spectrum to the database
+                # -----------------------------------
+                self.insert_spectrum("%s_%03d" % (accession_prefix, acc_pref_idx), contributor, specs[acc])
+
+            acc_pref_idx += 1
 
 
-                "spectra_candidates", "spectra_peaks", "spectra_raw_rts", "spectra_meta", "datasets",
-                "molecules"
 
+        print(len(specs))
 
         print("bla")
 
+    def insert_spectrum(self, dataset_identifier: str, contributor: str, spectrum: MBSpectrum):
+        """
 
+        :param spectrum:
+        :return:
+        """
+        with self.__conn:
+            # ===========================
+            # Insert Molecule Information
+            # ===========================
+            self.__conn.execute("INSERT OR IGNORE INTO molecules VALUES (%s)" % self._get_db_value_placeholders(8),
+                                (
+                                    spectrum.get("cid"),
+                                    spectrum.get("inchi"),
+                                    spectrum.get("inchikey"),
+                                    spectrum.get("inchikey").split("-")[0],
+                                    spectrum.get("smiles_iso"),
+                                    spectrum.get("smiles_can"),
+                                    spectrum.get("exact_mass"),
+                                    spectrum.get("molecular_formula")
+                                ))
+
+            # ==========================
+            # Insert Dataset Information
+            # ==========================
+            self.__conn.execute("INSERT OR IGNORE INTO datasets VALUES (%s)" % self._get_db_value_placeholders(15),
+                                (
+                                    dataset_identifier,
+                                    contributor,
+                                    spectrum.get("copyright"),
+                                    spectrum.get("license"),
+                                    spectrum.get("column_name"),
+                                    None,  # FIXME: column type, e.g. RP or HILIC, is not specified in the Massbank file
+                                    spectrum.get("column_temperature"),
+                                    spectrum.get("flow_gradient"),
+                                    spectrum.get("solvent_A"),
+                                    spectrum.get("solvent_B"),
+                                    spectrum.get("solvent"),
+                                    spectrum.get("instrument_type"),
+                                    spectrum.get("instrument"),
+                                    None  # TODO: the column dead-time needs to be estimated from the data
+                                ))
+
+            # ===============================
+            # Insert Spectra Meta Information
+            # ===============================
+            ion_mode = spectrum.get("ion_mode")
+            if not ion_mode:
+                print("Get ion mode from precursor type.")
+                # have to do special check for ionization mode (as sometimes gets missed)
+                m = re.search("^\[.*\](\-|\+)", spectrum.get("precursor_type"), re.IGNORECASE)
+                if m:
+                    polarity = m.group(1).strip()
+                    if polarity == "+":
+                        ion_mode = "positive"
+                    elif polarity == "-":
+                        ion_mode = "negative"
+                    else:
+                        raise RuntimeError("Ups")
+            else:
+                ion_mode = ion_mode.lower()
+
+            self.__conn.execute("INSERT INTO spectra_meta VALUES (%s)" % self._get_db_value_placeholders(12),
+                                (
+                                    spectrum.get("accession"),
+                                    dataset_identifier,
+                                    spectrum.get("record_title"),
+                                    spectrum.get("cid"),
+                                    ion_mode,
+                                    spectrum.get("precursor_mz"),
+                                    spectrum.get("precursor_type"),
+                                    spectrum.get("collision_energy"),
+                                    spectrum.get("ms_type"),
+                                    spectrum.get("resolution"),
+                                    spectrum.get("fragmentation_type"),
+                                    spectrum.get("origin")
+                                ))
+
+            # ====================
+            # Insert Spectra Peaks
+            # ====================
+            self.__conn.executemany("INSERT INTO spectra_peaks VALUES(%s, ?, ?)" % spectrum.get("accession"),
+                                    spectrum.get_peak_list_as_tuples())
+
+            
 if __name__ == "__main__":
     dbfn = "tests/test_DB.sqlite"
+    pubchem_dbfn = "/run/media/bach/EVO500GB/data/pubchem_24-06-2019/db/pubchem.sqlite"
 
     create_db(dbfn)
 
-    with MassbankDB(dbfn) as mbdb:
+    with MassbankDB(dbfn, pubchem_dbfn=pubchem_dbfn) as mbdb:
         mbdb.insert_dataset("AU", "Athens_Univ", "/run/media/bach/EVO500GB/data/MassBank")

@@ -45,6 +45,9 @@ class MBSpectrum(object):
     def set(self, key, value):
         self._meta_information[key] = value
 
+    def get_peak_list_as_tuples(self):
+        return list(zip(self._mz, self._int))
+
     def update_molecule_structure_information_using_pubchem(self, db_conn):
         """
         Information of the molecular structure are extracted from PubChem. We use the CID (if provided) or the InChIKey
@@ -61,24 +64,26 @@ class MBSpectrum(object):
 
         if self.get("pubchem_id"):
             id, id_type = self.get("pubchem_id")
+            id = int(id)
+            id_type = id_type.lower()
         elif self.get("inchikey"):
-            id, id_type = self.get("inchikey"), "inchikey"
+            id, id_type = self.get("inchikey"), "InChIKey"
         else:
             print("WARNING: Cannot update molecule structure information for '%s' as no id defined, i.e. pubchem or "
                   "inchikey." % self.get("accession"))
             return False
 
         # Fetch information from local DB
-        rows = db_conn.execute("SELECT InChI, InChIKey, SMILES_CAN, SMILES_ISO, exact_mass, molecular_formula "
+        rows = db_conn.execute("SELECT cid, InChI, InChIKey, SMILES_CAN, SMILES_ISO, exact_mass, molecular_formula "
                                "    FROM compounds"
-                               "    WHERE ? is ?", (id_type, id)).fetchall()
+                               "    WHERE %s is ?" % id_type, (id, )).fetchall()
 
         if not len(rows):
             print("WARNING: Could not find any compound with {}={} for {}.".format(id_type, id, self.get("accession")))
             return False
 
         # Update the information
-        for c, name in enumerate(["inchi", "inchikey", "smiles_can", "smiles", "exact_mass", "molecular_formula"]):
+        for c, name in enumerate(["cid", "inchi", "inchikey", "smiles_can", "smiles_iso", "exact_mass", "molecular_formula"]):
             self.set(name, rows[0][c])
 
         return True
