@@ -48,6 +48,12 @@ class MBSpectrum(object):
     def get_peak_list_as_tuples(self):
         return list(zip(self._mz, self._int))
 
+    def get_mz(self):
+        return self._mz
+
+    def get_int(self):
+        return self._int
+
     def update_molecule_structure_information_using_pubchem(self, db_conn):
         """
         Information of the molecular structure are extracted from PubChem. We use the CID (if provided) or the InChIKey
@@ -73,6 +79,9 @@ class MBSpectrum(object):
                   "inchikey." % self.get("accession"))
             return False
 
+        if id_type == "sid":
+            return False
+
         # Fetch information from local DB
         rows = db_conn.execute("SELECT cid, InChI, InChIKey, SMILES_CAN, SMILES_ISO, exact_mass, molecular_formula "
                                "    FROM compounds"
@@ -96,7 +105,7 @@ class MBSpectrum(object):
                 continue
 
             if len(v) == 0:
-                print("WARNING: Empty information for '%s':" % k, v)
+                print("WARNING: Empty information for {}={}".format(k, v))
                 continue
 
             if len(v) == 1:
@@ -148,11 +157,9 @@ class MBSpectrum(object):
         # Extract peaks
         peak_list = []
         i = 2  # skip: PK$PEAK: m/z int. rel.int.
-        peak_regex = re.compile("(\d*[,.]?\d*) (\d*[,.]?\d*) (\d*)")
         while lines[i] != "//\n":
-            match = peak_regex.match(lines[i].strip())
-            assert match
-            peak_list.append(match.groups())
+            peak_list.append(tuple(lines[i].strip().split(" ")))
+            assert len(peak_list[-1]) == 3
             i += 1
 
         assert len(peak_list) == num_peaks, "Length of extracted peak list must be equal 'NUM_PEAK'."

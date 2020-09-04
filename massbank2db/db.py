@@ -28,6 +28,7 @@ import sqlite3
 import os
 import glob
 import re
+import pandas as pd
 
 from massbank2db.spectrum import MBSpectrum
 
@@ -55,12 +56,14 @@ def create_db(file_pth):
                  inchi             VARCHAR NOT NULL, \
                  inchikey          VARCHAR NOT NULL, \
                  inchikey1         VARCHAR NOT NULL, \
+                 inchikey2         VARCHAR NOT NULL, \
                  smiles_iso        VARCHAR NOT NULL, \
                  smiles_can        VARCHAR NOT NULL, \
                  exact_mass        FLOAT NOT NULL, \
                  molecular_formula VARCHAR NOT NULL)")
         conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey_index ON molecules(inchikey)")
         conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey1_index ON molecules(inchikey1)")
+        conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey2_index ON molecules(inchikey2)")
         conn.execute("CREATE INDEX IF NOT EXISTS molecules_exact_mass_index ON molecules(exact_mass)")
         conn.execute("CREATE INDEX IF NOT EXISTS molecules_mf_index ON molecules(molecular_formula)")
 
@@ -71,18 +74,21 @@ def create_db(file_pth):
             "CREATE TABLE datasets( \
                 name                VARCHAR PRIMARY KEY NOT NULL, \
                 contributor         VARCHAR NOT NULL, \
+                ion_mode            VARCHAR NOT NULL, \
+                num_spectra         INTEGER, \
+                num_compounds       INTEGER, \
                 copyright           VARCHAR, \
                 license             VARCHAR, \
-                column_name         VARCHAR, \
+                column_name         VARCHAR NOT NULL, \
                 column_type         VARCHAR NOT NULL, \
                 column_temperature  FLOAT, \
-                flow_gradient       VARCHAR, \
+                flow_gradient       VARCHAR NOT NULL, \
                 flow_rate           FLOAT, \
-                solvent_A           VARCHAR, \
-                solvent_B           VARCHAR, \
+                solvent_A           VARCHAR NOT NULL, \
+                solvent_B           VARCHAR NOT NULL, \
                 solvent             VARCHAR, \
-                instrument_type     VARCHAR, \
-                instrument          VARCHAR, \
+                instrument_type     VARCHAR NOT NULL, \
+                instrument          VARCHAR NOT NULL, \
                 column_dead_time    FLOAT)"
         )
 
@@ -97,7 +103,7 @@ def create_db(file_pth):
                 precursor_mz        FLOAT NOT NULL, \
                 precursor_type      FLOAT NOT NULL, \
                 collision_energy    FLOAT, \
-                ms_type             VARCHAR, \
+                ms_type             VARCHAR NOT NULL, \
                 resolution          FLOAT, \
                 fragmentation_type  VARCHAR, \
                 origin              VARCHAR, \
@@ -128,7 +134,7 @@ def create_db(file_pth):
                 spectrum  VARCHAR NOT NULL, \
                 candidate INTEGER NOT NULL, \
                 mf_equal  INTEGER NOT NULL, \
-                mz_diff   FLOAT NOT NULL, \
+                ppm_diff  FLOAT NOT NULL, \
              FOREIGN KEY(spectrum)  REFERENCES spectra_meta(accession)  ON DELETE CASCADE, \
              FOREIGN KEY(candidate) REFERENCES molecules(cid)           ON DELETE CASCADE, \
              PRIMARY KEY(spectrum, candidate))")
@@ -264,20 +270,27 @@ class MassbankDB(object):
         # =====================
         # Group the accessions:
         # =====================
-        cur = filter_db_conn.execute(
-            "SELECT COUNT(DISTINCT inchikey) AS num_unique_molecules, GROUP_CONCAT(accession) AS accessions \
-                FROM information \
-                WHERE retention_time IS NOT NULL AND ms_level IS 'MS2' \
-                GROUP BY ion_mode, instrument, instrument_type, column_name, column_temperature, flow_gradient, \
-                         flow_rate, solvent_A, solvent_B")
+        _stmt = ["SELECT COUNT(DISTINCT inchikey), GROUP_CONCAT(accession) FROM information"]
+        if self.__only_with_rt and self.__only_ms2:
+            _stmt.append("WHERE retention_time IS NOT NULL AND ms_level IS 'MS2'")
+        elif self.__only_with_rt:
+            _stmt.append("WHERE retention_time IS NOT NULL")
+        elif self.__only_ms2:
+            _stmt.append("WHERE ms_level IS 'MS2'")
+        _stmt.append("GROUP BY ion_mode, instrument, instrument_type, column_name, column_temperature, flow_gradient, "
+                     "  flow_rate, solvent_A, solvent_B")
+
+        cur = filter_db_conn.execute(" ".join(_stmt))
 
         # ============================================
         # Include the accessions as separate datasets:
         # ============================================
-        acc_pref_idx = 1
-        for row in cur.fetchall():
+        acc_pref_idx = 0
+        for row in cur:
             if row[0] < self.__min_number_of_unique_compounds_per_dataset:
                 continue
+
+            dataset_identifier = "%s_%03d" % (accession_prefix, acc_pref_idx)
 
             for acc in row[1].split(","):
                 # -----------------------------------------------------------------------------
@@ -285,21 +298,31 @@ class MassbankDB(object):
                 # -----------------------------------------------------------------------------
                 if self.__only_with_pubchem_info and \
                         not specs[acc].update_molecule_structure_information_using_pubchem(self.__pc_conn):
-                    # del specs[acc]  # remove the spectrum, if its structure information could not be updated
                     continue
 
                 # -----------------------------------
                 # Insert the spectrum to the database
                 # -----------------------------------
-                self.insert_spectrum("%s_%03d" % (accession_prefix, acc_pref_idx), contributor, specs[acc])
+                try:
+                    with self.__conn:
+                        self.insert_spectrum(dataset_identifier, contributor, specs[acc])
+                except sqlite3.IntegrityError as err:
+                    print("WARNING: When inserting %s the following SQLite exception was raised: " % acc,
+                          err)
+                    continue
+
+            # ----------------------------------------------------
+            # Determine the number of spectra and unique compounds
+            # ----------------------------------------------------
+            with self.__conn:
+                _num_spec, _num_cmp = self.__conn.execute("SELECT COUNT(accession), COUNT(distinct molecule) "
+                                                          "   FROM spectra_meta "
+                                                          "   WHERE dataset IS ?", (dataset_identifier,)).fetchall()[0]
+                self.__conn.execute("UPDATE datasets "
+                                    "   SET num_spectra = ?, num_compounds = ?"
+                                    "   WHERE name IS ?", (_num_spec, _num_cmp, dataset_identifier))
 
             acc_pref_idx += 1
-
-
-
-        print(len(specs))
-
-        print("bla")
 
     def insert_spectrum(self, dataset_identifier: str, contributor: str, spectrum: MBSpectrum):
         """
@@ -307,90 +330,130 @@ class MassbankDB(object):
         :param spectrum:
         :return:
         """
-        with self.__conn:
-            # ===========================
-            # Insert Molecule Information
-            # ===========================
-            self.__conn.execute("INSERT OR IGNORE INTO molecules VALUES (%s)" % self._get_db_value_placeholders(8),
-                                (
-                                    spectrum.get("cid"),
-                                    spectrum.get("inchi"),
-                                    spectrum.get("inchikey"),
-                                    spectrum.get("inchikey").split("-")[0],
-                                    spectrum.get("smiles_iso"),
-                                    spectrum.get("smiles_can"),
-                                    spectrum.get("exact_mass"),
-                                    spectrum.get("molecular_formula")
-                                ))
+        # ===========================
+        # Insert Molecule Information
+        # ===========================
+        self.__conn.execute("INSERT OR IGNORE INTO molecules VALUES (%s)" % self._get_db_value_placeholders(9),
+                            (
+                                spectrum.get("cid"),
+                                spectrum.get("inchi"),
+                                spectrum.get("inchikey"),
+                                spectrum.get("inchikey").split("-")[0],
+                                spectrum.get("inchikey").split("-")[1],
+                                spectrum.get("smiles_iso"),
+                                spectrum.get("smiles_can"),
+                                spectrum.get("exact_mass"),
+                                spectrum.get("molecular_formula")
+                            ))
 
-            # ==========================
-            # Insert Dataset Information
-            # ==========================
-            self.__conn.execute("INSERT OR IGNORE INTO datasets VALUES (%s)" % self._get_db_value_placeholders(15),
-                                (
-                                    dataset_identifier,
-                                    contributor,
-                                    spectrum.get("copyright"),
-                                    spectrum.get("license"),
-                                    spectrum.get("column_name"),
-                                    None,  # FIXME: column type, e.g. RP or HILIC, is not specified in the Massbank file
-                                    spectrum.get("column_temperature"),
-                                    spectrum.get("flow_gradient"),
-                                    spectrum.get("solvent_A"),
-                                    spectrum.get("solvent_B"),
-                                    spectrum.get("solvent"),
-                                    spectrum.get("instrument_type"),
-                                    spectrum.get("instrument"),
-                                    None  # TODO: the column dead-time needs to be estimated from the data
-                                ))
+        # ==========================
+        # Insert Dataset Information
+        # ==========================
+        ion_mode = spectrum.get("ion_mode")
+        if not ion_mode:
+            print("Get ion mode from precursor type.")
+            # have to do special check for ionization mode (as sometimes gets missed)
+            m = re.search("^\[.*\](\-|\+)", spectrum.get("precursor_type"), re.IGNORECASE)
+            if m:
+                polarity = m.group(1).strip()
+                if polarity == "+":
+                    ion_mode = "positive"
+                elif polarity == "-":
+                    ion_mode = "negative"
+                else:
+                    raise RuntimeError("Ups")
+        else:
+            ion_mode = ion_mode.lower()
+        self.__conn.execute("INSERT OR IGNORE INTO datasets VALUES (%s)" % self._get_db_value_placeholders(18),
+                            (
+                                dataset_identifier,
+                                contributor,
+                                ion_mode,
+                                0,
+                                0,
+                                spectrum.get("copyright"),
+                                spectrum.get("license"),
+                                spectrum.get("column_name"),
+                                None,  # FIXME: column type, e.g. RP or HILIC, is not specified in the Massbank file
+                                spectrum.get("column_temperature"),
+                                spectrum.get("flow_gradient"),
+                                spectrum.get("flow_rate"),
+                                spectrum.get("solvent_A"),
+                                spectrum.get("solvent_B"),
+                                spectrum.get("solvent"),
+                                spectrum.get("instrument_type"),
+                                spectrum.get("instrument"),
+                                None  # TODO: the column dead-time needs to be estimated from the data
+                            ))
 
-            # ===============================
-            # Insert Spectra Meta Information
-            # ===============================
-            ion_mode = spectrum.get("ion_mode")
-            if not ion_mode:
-                print("Get ion mode from precursor type.")
-                # have to do special check for ionization mode (as sometimes gets missed)
-                m = re.search("^\[.*\](\-|\+)", spectrum.get("precursor_type"), re.IGNORECASE)
-                if m:
-                    polarity = m.group(1).strip()
-                    if polarity == "+":
-                        ion_mode = "positive"
-                    elif polarity == "-":
-                        ion_mode = "negative"
-                    else:
-                        raise RuntimeError("Ups")
-            else:
-                ion_mode = ion_mode.lower()
+        # ===============================
+        # Insert Spectra Meta Information
+        # ===============================
+        self.__conn.execute("INSERT INTO spectra_meta VALUES (%s)" % self._get_db_value_placeholders(12),
+                            (
+                                spectrum.get("accession"),
+                                dataset_identifier,
+                                spectrum.get("record_title"),
+                                spectrum.get("cid"),
+                                ion_mode,
+                                spectrum.get("precursor_mz"),
+                                spectrum.get("precursor_type"),
+                                spectrum.get("collision_energy"),
+                                spectrum.get("ms_type"),
+                                spectrum.get("resolution"),
+                                spectrum.get("fragmentation_type"),
+                                spectrum.get("origin")
+                            ))
 
-            self.__conn.execute("INSERT INTO spectra_meta VALUES (%s)" % self._get_db_value_placeholders(12),
+        # ====================
+        # Insert Spectra Peaks
+        # ====================
+        _mz, _int = spectrum.get_mz(), spectrum.get_int()
+        _n_peaks = len(_mz)
+        _acc = [spectrum.get("accession")] * _n_peaks
+        self.__conn.executemany("INSERT INTO spectra_peaks VALUES(%s)" % self._get_db_value_placeholders(3),
+                                zip(_acc, _mz, _int))
+
+        # =====================
+        # Insert Retention Time
+        # =====================
+        if spectrum.get("retention_time_unit") == '':
+            if spectrum.get("retention_time") > 100:
+                print("WARNING: Retention time unit default (min) does not look reasonable for %s with rt=%.3f"
+                      % (spectrum.get("accession"), spectrum.get("retention_time")))
+
+            self.__conn.execute("INSERT INTO spectra_raw_rts (spectrum, retention_time) VALUES(?, ?)",
                                 (
                                     spectrum.get("accession"),
-                                    dataset_identifier,
-                                    spectrum.get("record_title"),
-                                    spectrum.get("cid"),
-                                    ion_mode,
-                                    spectrum.get("precursor_mz"),
-                                    spectrum.get("precursor_type"),
-                                    spectrum.get("collision_energy"),
-                                    spectrum.get("ms_type"),
-                                    spectrum.get("resolution"),
-                                    spectrum.get("fragmentation_type"),
-                                    spectrum.get("origin")
+                                    spectrum.get("retention_time"),
                                 ))
-
-            # ====================
-            # Insert Spectra Peaks
-            # ====================
-            self.__conn.executemany("INSERT INTO spectra_peaks VALUES(%s, ?, ?)" % spectrum.get("accession"),
-                                    spectrum.get_peak_list_as_tuples())
+        else:
+            self.__conn.execute("INSERT INTO spectra_raw_rts VALUES(?, ?, ?)",
+                                (
+                                    spectrum.get("accession"),
+                                    spectrum.get("retention_time"),
+                                    spectrum.get("retention_time_unit")
+                                ))
 
             
 if __name__ == "__main__":
+    massbank_dir = "/run/media/bach/EVO500GB/data/MassBank"
+
     dbfn = "tests/test_DB.sqlite"
     pubchem_dbfn = "/run/media/bach/EVO500GB/data/pubchem_24-06-2019/db/pubchem.sqlite"
 
     create_db(dbfn)
 
-    with MassbankDB(dbfn, pubchem_dbfn=pubchem_dbfn) as mbdb:
-        mbdb.insert_dataset("AU", "Athens_Univ", "/run/media/bach/EVO500GB/data/MassBank")
+    # Load list of datasets provided by Massbank
+    mbds = pd.read_csv(os.path.join(massbank_dir, "List_of_Contributors_Prefixes_and_Projects.md"),
+                       sep="|", skiprows=2, header=None) \
+        .iloc[:, [1, 4]] \
+        .applymap(str.strip) \
+        .rename({1: "Contributor", 4: "AccPref"}, axis=1)  # type: pd.DataFrame
+
+    for idx, row in mbds.iterrows():
+        print("(%02d/%02d) %s: " % (idx + 1, len(mbds), row["Contributor"]))
+        for pref in row["AccPref"].split(","):
+            print(pref)
+            with MassbankDB(dbfn, pubchem_dbfn=pubchem_dbfn) as mbdb:
+                mbdb.insert_dataset(pref, row["Contributor"], massbank_dir)

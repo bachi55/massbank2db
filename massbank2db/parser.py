@@ -105,72 +105,18 @@ def get_AC_regex(compile=True) -> dict:
     return regex
 
 
-def parse_info(msfn: str, regex: dict) -> (dict, dict):
-    """Parse and extract all meta data by looping through the dictionary of meta_info regexs
-
-    Args:
-         line (str): line of the msp file
-    """
-    infos = {key: None for key in regex}
-
-    with open(msfn, "r") as msfile:
-        line = msfile.readline()
-        while not line.startswith("PK$NUM_PEAK:"):
-            if _extract_info_from_line(line, regex, infos):
-                continue
-
-            line = msfile.readline()
-
-    return infos
-
-
-def _extract_info_from_line(line: str, regex: dict, out: dict) -> bool:
-    for info in regex:
-        if not out[info]:
-            match = re.search(regex[info], line)  # re.IGNORECASE
-            if match:
-                out[info] = tuple(map(str.strip, match.groups()))
-                return True
-
-    return False
-
-
-def parse_peaks(msfn: str):
-    """
-
-    :param msfn:
-    :return:
-    """
-    # TODO: Check whether we are parsing peaks or annotations
-
-    with open(msfn, "r") as msfile:
-        line = msfile.readline()
-        while not line.startswith("PK$NUM_PEAK:"):
-            line = msfile.readline()
-
-        # Extract peaks
-        num_peaks = int(line[len("PK$NUM_PEAK: "):].strip())
-        peak_list = []
-        _ = msfile.readline()  # skip: PK$PEAK: m/z int. rel.int.
-        line = msfile.readline()
-        while line != "//\n":
-            match = re.match("(\d*[,.]?\d*) (\d*[,.]?\d*) (\d*)", line.strip())
-            assert match
-            peak_list.append(match.groups())
-
-            line = msfile.readline()
-        assert len(peak_list) == num_peaks, "Length of extracted peak list must be equal 'NUM_PEAK'."
-
-    return peak_list
-
-
 if __name__ == "__main__":
-    msfn = "/run/media/bach/EVO500GB/data/MassBank/Chubu_Univ/UT001973.txt"
+    import os
 
-    # Read all meta information from the MS-file
-    info = parse_info(msfn, regex={**get_meta_regex(), **get_AC_regex()})
-    print(info)
+    from glob import glob
 
-    # Read peaklist
-    peaks = parse_peaks(msfn)
-    print(peaks)
+    from massbank2db.spectrum import MBSpectrum
+
+    # msfn = "/run/media/bach/EVO500GB/data/MassBank/Chubu_Univ/UT001973.txt"
+
+    for msfn in sorted(glob("/run/media/bach/EVO500GB/data/MassBank/ISAS_Dortmund/IA*.txt")):
+        # Read all meta information from the MS-file
+        try:
+            spec = MBSpectrum(msfn)
+        except AssertionError:
+            print(os.path.basename(msfn))

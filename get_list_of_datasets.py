@@ -32,11 +32,10 @@ import pandas as pd
 import argparse
 import os
 import glob
-import sqlite3
 
 from typing import Optional
 
-from massbank2db.parser import parse_info, get_AC_regex, get_CH_regex
+from massbank2db.parser import MBSpectrum
 from massbank2db.db import get_temporal_database
 
 
@@ -85,7 +84,7 @@ if __name__ == "__main__":
             print(glob_str)
 
             for fn in sorted(glob.glob(glob_str)):
-                info = parse_info(fn, regex={**get_AC_regex(), **get_CH_regex()})
+                info = MBSpectrum(fn)
                 if info["solvent_A"] and info["solvent_B"]:
                     info["solvent"] = None
 

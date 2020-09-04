@@ -1,5 +1,4 @@
 .idea
 *.egg-info
-massbank2db/tests/test_DB.sqlite
-.tmp.sqlite
+**/*.sqlite
 __pycache__
