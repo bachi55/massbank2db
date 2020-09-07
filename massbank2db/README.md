@@ -94,4 +94,13 @@ This tables stores the retention times associated with the Massbank entries.
 
 ### Table: spectra_candidates
 
-This table associates each spectrum in the DB with a set of molecular candidate structures extracted from PubChem. The candidate sets are comprised by all molecular structurs those exact mass ```m_is``` is within an +/- X ppm window around the (estimated) exact mass ```m_i = prec_i - ion_mode_i * adduct_mass_i``` of the molecule associated with the spectrum: ```[m_i - (m_i * X) / 1e6, m_i + (m_i * X) / 1e6]``` (following the MetFragRelaunched library, [here](https://github.com/ipb-halle/MetFragRelaunched/blob/c57f9d2b406350b2357ce9f7ce42a286cefcca13/MetFragLib/src/main/java/de/ipbhalle/metfraglib/additionals/MathTools.java#L16) and [here](https://github.com/ipb-halle/MetFragRelaunched/blob/c57f9d2b406350b2357ce9f7ce42a286cefcca13/MetFragLib/src/main/java/de/ipbhalle/metfraglib/database/LocalMySQLDatabase.java#L23)).
+This table associates each spectrum in the DB with a set of molecular candidate structures extracted from PubChem. The candidate sets ```C_i``` for spectrum ```i``` are comprised of all molecular structurs those exact mass ```m_is``` is within an +/- X ppm window around the (estimated) exact mass ```m_i = prec_i - ion_mode_i * adduct_mass_i``` of the molecule associated with the spectrum: ```m_is € [m_i - (m_i * X) / 1e6, m_i + (m_i * X) / 1e6]``` (following the MetFragRelaunched library, [here](https://github.com/ipb-halle/MetFragRelaunched/blob/c57f9d2b406350b2357ce9f7ce42a286cefcca13/MetFragLib/src/main/java/de/ipbhalle/metfraglib/additionals/MathTools.java#L16) and [here](https://github.com/ipb-halle/MetFragRelaunched/blob/c57f9d2b406350b2357ce9f7ce42a286cefcca13/MetFragLib/src/main/java/de/ipbhalle/metfraglib/database/LocalMySQLDatabase.java#L23)).
+
+| Column | Description | Primary Key | Foreign Key | Index |
+| --- | --- | --- | --- | --- | 
+| spectrum | Spectrum id | False | spectra_meta(accession) | True | 
+| candidate | CID of the molecule associated with the entry | False | molecules(cid) | True | 
+| mf_gt_equal | If 1 (=True), the candidate's molecular formula is equal to the *ground truth* molecular formula of the molecule associated with the spectrum | False | None | False | 
+| mf_pred_equal | If 1 (=True), the candidate's molecular formula is equal to the *predicted* molecular formula of the molecule associated with the spectrum | False | None | False | 
+| ppm_diff_gt | Mass difference (in ppm) of the candidate and the *ground truth* exact mass of the spectrum | False | None | True |
+| ppm_diff_est | Mass difference (in ppm) of the candidate and the *estimated* exact mass of the spectrum | False | None | True |
