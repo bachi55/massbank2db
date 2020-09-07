@@ -35,3 +35,22 @@ If requested (TODO: add link to code here), all information in this table are ex
 As previously described, the Massbank entries are grouped by contributors and measurement setups. The tabel *datasets* stores meta-information to all those groups.
 
 | Column | Description | Primary Key | Foreign Key | Index |
+| --- | --- | --- | --- | --- |
+| name | Dataset identifier compiled from the contributors' accession-prefixes and a running sub-group integer, e.g. AU_001 | True | None | True | 
+| contributor | Contributor | False | None | False | 
+| ion_mode | Ionization mode. Either "positive" or "negative" | False | None | False | 
+| num_spectra | Number of MS(/MS) spectra in this dataset | False | None | False | 
+| num_compounds | Number of unqiue compounds in this dataset | False | None | False | 
+| copyright | [Massbank copyright information](https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#2.1.6) | False | None | False | 
+| license | [Massbank license information](https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#215-license) | False | None | False | 
+| column_name | [Commercial Name of Chromatography Column and Manufacture](https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#246-subtag-column_name) | False | None | False | 
+| column_type | Either HILIC or Reversed Phased (RP) (TODO: Information needs to be extracted manualy) | False | None | False | 
+| column_temperature | [Static Column Temperature](https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#246-subtag-column_temperature) | False | None | False | 
+| flow_gradient | [Gradient of Mobile Phases in LC-MS](https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#246-subtag-flow_gradient) | False | None | False |
+| flow_rate | [Flow Rate of Migration Phase](https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#246-subtag-flow_rate) | False | None | False | 
+| solvent_A | [Chemical Composition of Buffer Solution (A)](https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#246-subtag-solvent) | False | None | False | 
+| solvent_B | Chemical Composition of Buffer Solution (B) | False | None | False | 
+| solvent | Chemical Composition of Buffer Solution (if no separate information for A and B are given) | False | None | False | 
+| instrument_type | [General Type of Instrument](https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#242-acinstrument_type) | False | None | 
+| instrument | [Commercial Name and Model of Chromatographic Separation Instrument, if any were coupled, and Mass Spectrometer and Manufacturer](https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#241-acinstrument) | False | None | False |
+| column_dead_time | Estimated column dead-time (TODO: calculate from LC specification or estimate) | False | None | False | 
