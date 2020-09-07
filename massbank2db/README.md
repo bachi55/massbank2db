@@ -81,3 +81,13 @@ This tables stores all peaks, i.e. (m/z, int)-tuples, of Massbank and their asso
 | spectrum | Spectrum id | False | spectra_meta(accession) | True | 
 | mz | Mass per charge (m/z) of the peak | False | None | False | 
 | itensity | Intensiry of the peak (unnormalized) | False | None | False | 
+
+### Table: spectra_raw_rts
+
+This tables stores the retention times associated with the Massbank entries.
+
+| Column | Description | Primary Key | Foreign Key | Index |
+| --- | --- | --- | --- | --- | 
+| spectrum | Spectrum id | False | spectra_meta(accession) | True | 
+| retention_time | Retention time | False | None | True | 
+| retention_time_unit | Retention time unit, e.g. min or sec | False | None | False | 
