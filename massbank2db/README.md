@@ -91,3 +91,7 @@ This tables stores the retention times associated with the Massbank entries.
 | spectrum | Spectrum id | False | spectra_meta(accession) | True | 
 | retention_time | Retention time | False | None | True | 
 | retention_time_unit | Retention time unit, e.g. min or sec | False | None | False | 
+
+### Table: spectra_candidates
+
+This table associates each spectrum in the DB with a set of molecular candidate structures extracted from PubChem.  
