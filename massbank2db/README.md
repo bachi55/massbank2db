@@ -77,6 +77,7 @@ For each MS(/MS) spectrum the DB stores meta-information, such as collision eneg
 This tables stores all peaks, i.e. (m/z, int)-tuples, of Massbank and their associated accessions.
 
 | Column | Description | Primary Key | Foreign Key | Index |
+| --- | --- | --- | --- | --- | 
 | spectrum | Spectrum id | False | spectra_meta(accession) | True | 
 | mz | Mass per charge (m/z) of the peak | False | None | False | 
 | itensity | Intensiry of the peak (unnormalized) | False | None | False | 
