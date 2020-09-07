@@ -60,6 +60,7 @@ As previously described, the Massbank entries are grouped by contributors and me
 For each MS(/MS) spectrum the DB stores meta-information, such as collision enegery or precursor m/z, as well a reference to the corresponding molecule. 
 
 | Column | Description | Primary Key | Foreign Key | Index |
+| --- | --- | --- | --- | --- |
 | accession | Massbank ID of the spectrum file | True | None | True | 
 | dataset | Dataset identifier | False | datasets(name) | False | 
 | record_title | [Brief Description of Massbank entry](https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#2.1.2) | False | None | False | 
