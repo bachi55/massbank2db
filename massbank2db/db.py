@@ -99,14 +99,12 @@ def create_db(file_pth):
                 dataset             VARCHAR NOT NULL, \
                 record_title        VARCHAR NOT NULL, \
                 molecule            INTEGER NOT NULL, \
-                ion_mode            VARCHAR NOT NULL, \
                 precursor_mz        FLOAT NOT NULL, \
                 precursor_type      FLOAT NOT NULL, \
                 collision_energy    FLOAT, \
                 ms_type             VARCHAR NOT NULL, \
                 resolution          FLOAT, \
                 fragmentation_type  VARCHAR, \
-                origin              VARCHAR, \
              FOREIGN KEY(molecule)  REFERENCES molecules(cid),\
              FOREIGN KEY(dataset)   REFERENCES datasets(name) ON DELETE CASCADE)"
         )
@@ -119,6 +117,8 @@ def create_db(file_pth):
                 retention_time_unit VARCHAR DEFAULT 'min', \
              FOREIGN KEY(spectrum) REFERENCES spectra_meta(accession) ON DELETE CASCADE)"
         )
+        conn.execute("CREATE INDEX IF NOT EXISTS spectra_raw_rts_spectrum_index ON spectra_raw_rts(spectrum)")
+        conn.execute("CREATE INDEX IF NOT EXISTS spectra_raw_rts_retention_time_index ON spectra_raw_rts(retention_time)")
 
         # Spectra Peak Information table
         conn.execute(
@@ -126,18 +126,26 @@ def create_db(file_pth):
                 spectrum  VARCHAR NOT NULL, \
                 mz        FLOAT NOT NULL, \
                 intensity FLOAT NOT NULL, \
-             FOREIGN KEY(spectrum) REFERENCES spectra_meta(accession) ON DELETE CASCADE)")
+             FOREIGN KEY(spectrum) REFERENCES spectra_meta(accession) ON DELETE CASCADE)"
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS spectra_peaks_spectrum_index ON spectra_peaks(spectrum)")
 
         # Spectra candidate information
         conn.execute(
             "CREATE TABLE spectra_candidates( \
-                spectrum  VARCHAR NOT NULL, \
-                candidate INTEGER NOT NULL, \
-                mf_equal  INTEGER NOT NULL, \
-                ppm_diff  FLOAT NOT NULL, \
+                spectrum      VARCHAR NOT NULL, \
+                candidate     INTEGER NOT NULL, \
+                mf_gt_equal   INTEGER NOT NULL, \
+                mf_pred_equal INTEGER NOT NULL, \
+                ppm_diff_gt   FLOAT NOT NULL, \
+                ppm_diff_est  FLOAT NOT NULL, \
              FOREIGN KEY(spectrum)  REFERENCES spectra_meta(accession)  ON DELETE CASCADE, \
              FOREIGN KEY(candidate) REFERENCES molecules(cid)           ON DELETE CASCADE, \
              PRIMARY KEY(spectrum, candidate))")
+        conn.execute("CREATE INDEX IF NOT EXISTS spectra_candidates_spectrum_index ON spectra_candidates(spectrum)")
+        conn.execute("CREATE INDEX IF NOT EXISTS spectra_candidates_candidate_index ON spectra_candidates(candidate)")
+        conn.execute("CREATE INDEX IF NOT EXISTS spectra_candidates_ppm_diff_index ON spectra_candidates(ppm_diff_gt)")
+        conn.execute("CREATE INDEX IF NOT EXISTS spectra_candidates_ppm_diff_index ON spectra_candidates(ppm_diff_est)")
 
 
 def get_temporal_database(file_pth=":memory:") -> sqlite3.Connection:
@@ -296,6 +304,7 @@ class MassbankDB(object):
                 # -----------------------------------------------------------------------------
                 # Update the molecule structure information in the spectrum file using PubChem:
                 # -----------------------------------------------------------------------------
+                # FIXME: Structures are only updates, if 'self.__only_with_pubchem_info' is True.
                 if self.__only_with_pubchem_info and \
                         not specs[acc].update_molecule_structure_information_using_pubchem(self.__pc_conn):
                     continue
@@ -374,7 +383,7 @@ class MassbankDB(object):
                                 spectrum.get("copyright"),
                                 spectrum.get("license"),
                                 spectrum.get("column_name"),
-                                None,  # FIXME: column type, e.g. RP or HILIC, is not specified in the Massbank file
+                                "",  # FIXME: column type, e.g. RP or HILIC, is not specified in the Massbank file
                                 spectrum.get("column_temperature"),
                                 spectrum.get("flow_gradient"),
                                 spectrum.get("flow_rate"),
@@ -389,20 +398,18 @@ class MassbankDB(object):
         # ===============================
         # Insert Spectra Meta Information
         # ===============================
-        self.__conn.execute("INSERT INTO spectra_meta VALUES (%s)" % self._get_db_value_placeholders(12),
+        self.__conn.execute("INSERT INTO spectra_meta VALUES (%s)" % self._get_db_value_placeholders(10),
                             (
                                 spectrum.get("accession"),
                                 dataset_identifier,
                                 spectrum.get("record_title"),
                                 spectrum.get("cid"),
-                                ion_mode,
                                 spectrum.get("precursor_mz"),
                                 spectrum.get("precursor_type"),
                                 spectrum.get("collision_energy"),
                                 spectrum.get("ms_type"),
                                 spectrum.get("resolution"),
                                 spectrum.get("fragmentation_type"),
-                                spectrum.get("origin")
                             ))
 
         # ====================
