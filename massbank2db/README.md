@@ -54,3 +54,19 @@ As previously described, the Massbank entries are grouped by contributors and me
 | instrument_type | [General Type of Instrument](https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#242-acinstrument_type) | False | None | 
 | instrument | [Commercial Name and Model of Chromatographic Separation Instrument, if any were coupled, and Mass Spectrometer and Manufacturer](https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#241-acinstrument) | False | None | False |
 | column_dead_time | Estimated column dead-time (TODO: calculate from LC specification or estimate) | False | None | False | 
+
+### Table: spectra_meta
+
+For each MS(/MS) spectrum the DB stores meta-information, such as collision enegery or precursor m/z, as well a reference to the corresponding molecule. 
+
+| Column | Description | Primary Key | Foreign Key | Index |
+| accession | Massbank ID of the spectrum file | True | None | True | 
+| dataset | Dataset identifier | False | datasets(name) | False | 
+| record_title | [Brief Description of Massbank entry](https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#2.1.2) | False | None | False | 
+| molecule | CID of the molecule associated with the entry | False | molecules(cid) | False | 
+| precursor_mz | [m/z of Precursor Ion in MSn spectrum](https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#251-subtag-precursor_mz) | False | None | False | 
+| precursor_type | [Type of Precursor Ion in MSn spectrum](https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#251-subtag-precursor_type) | False | None | False | 
+| collision_energy | [Collision Energy for Dissociation](https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#245-subtag-collision_energy) | False | None | False | 
+| ms_type | [MS(1) no fragmentation, MS2 1st generation product ion spectrum, ...](https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#243-acmass_spectrometry-ms_type) | False | None | False |
+| resolution | [Resolution (aka Mass Resolution or Resolving Power) is the smallest mass difference between two equal magnitude peaks so that the valley between them is a specified fraction of the peak height](https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#245-subtag-resolution) | False | None | False |
+| fragmentation_type | [Fragmentation method used for dissociation or fragmentation](https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#245-subtag-fragmentation_mode) | False | None | False | 
