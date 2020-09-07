@@ -94,4 +94,4 @@ This tables stores the retention times associated with the Massbank entries.
 
 ### Table: spectra_candidates
 
-This table associates each spectrum in the DB with a set of molecular candidate structures extracted from PubChem.  
+This table associates each spectrum in the DB with a set of molecular candidate structures extracted from PubChem. The candidate sets are comprised by all molecular structurs those exact mass ```m_is``` is within an +/- X ppm window around the (estimated) exact mass ```m_i = prec_i - ion_mode_i * adduct_mass_i``` of the molecule associated with the spectrum: ```[m_i - (m_i * X) / 1e6, m_i + (m_i * X) / 1e6]``` (following the MetFragRelaunched library, [here](https://github.com/ipb-halle/MetFragRelaunched/blob/c57f9d2b406350b2357ce9f7ce42a286cefcca13/MetFragLib/src/main/java/de/ipbhalle/metfraglib/additionals/MathTools.java#L16) and [here](https://github.com/ipb-halle/MetFragRelaunched/blob/c57f9d2b406350b2357ce9f7ce42a286cefcca13/MetFragLib/src/main/java/de/ipbhalle/metfraglib/database/LocalMySQLDatabase.java#L23)).
