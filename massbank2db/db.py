@@ -104,7 +104,7 @@ def create_db(file_pth):
                 collision_energy    FLOAT, \
                 ms_type             VARCHAR NOT NULL, \
                 resolution          FLOAT, \
-                fragmentation_type  VARCHAR, \
+                fragmentation_mode  VARCHAR, \
              FOREIGN KEY(molecule)  REFERENCES molecules(cid),\
              FOREIGN KEY(dataset)   REFERENCES datasets(name) ON DELETE CASCADE)"
         )
@@ -409,7 +409,7 @@ class MassbankDB(object):
                                 spectrum.get("collision_energy"),
                                 spectrum.get("ms_type"),
                                 spectrum.get("resolution"),
-                                spectrum.get("fragmentation_type"),
+                                spectrum.get("fragmentation_mode"),
                             ))
 
         # ====================

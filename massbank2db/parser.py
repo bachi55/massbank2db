@@ -27,12 +27,26 @@
 import re
 
 
-def compile_regex(regex):
+def _compile_regex(regex):
     return [re.compile(rx) for rx in regex]
 
 
 def get_meta_regex(compile=True) -> dict:
-    """ Create a dictionary of regex for extracting the meta data for the spectra
+    """
+    Create a dictionary of regex for extracting the meta data for the spectra
+
+    See also: https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#21-record-specific-information
+
+    :param compile: boolean indicating whether the regular expressions should be compiled already.
+
+    :return: dictionary,
+        keys, strings represent to name of the property to extract (e.g. same name as in the MBSpectrum class)
+        values,
+            list of strings, regular expressions to extract the particular information
+
+            or (if compile=True)
+
+            list of re.Pattern, pre-compiled regular expressions to extract the information
     """
     regex = {'accession':    ['^ACCESSION:(.*)$'],
              'copyright':    ['^COPYRIGHT:\s+(.*)'],
@@ -40,45 +54,95 @@ def get_meta_regex(compile=True) -> dict:
              'record_title': ['^RECORD_TITLE:\s+(.*)$']}
 
     if compile:
-        regex = {k: compile_regex(v) for k, v in regex.items()}
+        regex = {k: _compile_regex(v) for k, v in regex.items()}
 
     return regex
 
 
 def get_ms_regex(compile=True) -> dict:
-    """ Create a dictionary of regex for extracting the Mass-spectra (MS) information for the spectra
+    """
+    Create a dictionary of regex for extracting the Mass-spectra (MS) information for the spectra.
+
+    See also: https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#25-description-of-mass-spectral-data
+
+    :param compile: boolean indicating whether the regular expressions should be compiled already.
+
+    :return: dictionary,
+        keys, strings represent to name of the property to extract (e.g. same name as in the MBSpectrum class)
+        values,
+            list of strings, regular expressions to extract the particular information
+
+            or (if compile=True)
+
+            list of re.Pattern, pre-compiled regular expressions to extract the information
     """
     regex = {'precursor_mz':    ['^MS\$FOCUSED_ION:\s+PRECURSOR_M/Z\s+(\d*[.,]?\d*)$'],
              'precursor_type':  ['^MS\$FOCUSED_ION:\s+PRECURSOR_TYPE\s+(.*)$'],
              'base_peak':       ['^MS\$FOCUSED_ION:\s+BASE_PEAK\s+(\d*[.,]?\d*)$']}
 
     if compile:
-        regex = {k: compile_regex(v) for k, v in regex.items()}
+        regex = {k: _compile_regex(v) for k, v in regex.items()}
 
     return regex
 
 
 def get_CH_regex(compile=True) -> dict:
+    """
+    Regular expressions related to the ground truth molecular structure annotation of the spectra. The information are
+    sufficient to represent the structure of the molecule.
+
+    See also: https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#22-information-of-chemical-compound-analyzed
+
+    :param compile: boolean indicating whether the regular expressions should be compiled already.
+
+    :return: dictionary,
+        keys, strings represent to name of the property to extract (e.g. same name as in the MBSpectrum class)
+        values,
+            list of strings, regular expressions to extract the particular information
+
+            or (if compile=True)
+
+            list of re.Pattern, pre-compiled regular expressions to extract the information
+    """
     regex = {
         "name":              ['^CH\$NAME:\s+(.*)$'],
         "molecular_formula": ['^CH\$FORMULA:\s+(.*)$'],
         "molecular_weight":  ['^CH\$MOLECULAR_WEIGHT:\s+(.*)$'],
-        "pubchem_id":        ['^CH\$LINK:\s+PUBCHEM\s+(CID|SID):(\d+)$',
-                              '^CH\$LINK:\s+PUBCHEM\s+(CID):(\d+)\s+SID:\d+$',
-                              '^CH\$LINK:\s+PUBCHEM\s+SID:\d+\s+(CID):(\d+)$'],
+        # As PubChem ID we consider only the CIDs (not SIDs!)
+        "pubchem_id":        ['^CH\$LINK:\s+PUBCHEM\s+CID:(\d+)$',
+                              '^CH\$LINK:\s+PUBCHEM\s+CID:(\d+)\s+SID:\d+$',
+                              '^CH\$LINK:\s+PUBCHEM\s+SID:\d+\s+CID:(\d+)$'],
         "exact_mass":        ['^CH\$EXACT_MASS:\s+(.*)$'],
-        "smiles":            ['^CH\$SMILES:\s+(.*)$'],
+        # MassBank documentation states, that the SMILES strings correspond to isomeric smiles:
+        # https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#225-chsmiles
+        "smiles_iso":        ['^CH\$SMILES:\s+(.*)$'],
         "inchikey":          ['^CH\$LINK:\s+INCHIKEY\s+(.*)$'],
         "inchi":             ['^CH\$LINK:\s+IUPAC\s+(.*)$']
     }
 
     if compile:
-        regex = {k: compile_regex(v) for k, v in regex.items()}
+        regex = {k: _compile_regex(v) for k, v in regex.items()}
 
     return regex
 
 
 def get_AC_regex(compile=True) -> dict:
+    """
+    Regular expressions related to the analytical method and conditions of the MassBank entry.
+
+    See also: https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#24-analytical-method-and-conditions
+
+    :param compile: boolean indicating whether the regular expressions should be compiled already.
+
+    :return: dictionary,
+        keys, strings represent to name of the property to extract (e.g. same name as in the MBSpectrum class)
+        values,
+            list of strings, regular expressions to extract the particular information
+
+            or (if compile=True)
+
+            list of re.Pattern, pre-compiled regular expressions to extract the information
+    """
     regex = {'instrument_type':     ['^AC\$INSTRUMENT_TYPE:\s+(.*)$'],
              'instrument':          ['^AC\$INSTRUMENT:\s+(.*)$'],
              # Mass Spectrometry
@@ -86,7 +150,7 @@ def get_AC_regex(compile=True) -> dict:
              'ms_type':             ['^AC\$MASS_SPECTROMETRY:\s+MS_TYPE\s+(MS\d*)$'],
              'resolution':          ['^AC\$MASS_SPECTROMETRY:\s+RESOLUTION\s+(.*)$'],
              'ion_mode':            ['^AC\$MASS_SPECTROMETRY:\s+ION_MODE\s+(.*)$'],
-             'fragmentation_type':  ['^AC\$MASS_SPECTROMETRY:\s+FRAGMENTATION_MODE\s+(.*)$'],
+             'fragmentation_mode':  ['^AC\$MASS_SPECTROMETRY:\s+FRAGMENTATION_MODE\s+(.*)$'],
              'mass_accuracy':       ['^AC\$MASS_SPECTROMETRY:\s+ACCURACY\s+(.*)$'],
              'mass_error':          ['^AC\$MASS_SPECTROMETRY:\s+ERROR\s+(.*)$'],
              # Chromatography
@@ -100,7 +164,7 @@ def get_AC_regex(compile=True) -> dict:
              'column_temperature':  ['^AC\$CHROMATOGRAPHY:\s+COLUMN.*TEMPERATURE\s(.*)$']}
 
     if compile:
-        regex = {k: compile_regex(v) for k, v in regex.items()}
+        regex = {k: _compile_regex(v) for k, v in regex.items()}
 
     return regex
 

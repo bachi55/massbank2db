@@ -37,7 +37,9 @@ class MBSpectrum(object):
         meta_information, i = self._parse_meta_information(
             self._mb_raw, {**get_meta_regex(), **get_ms_regex(), **get_CH_regex(), **get_AC_regex()})
         self._meta_information = self._sanitize_meta_information(meta_information)
-        self._mz, self._int, _ = map(list, zip(*self._parse_peaks(self._mb_raw[i:])))
+        self._mz, self._int = self._parse_peaks(self._mb_raw[i:])
+        self._mz = map(float, self._mz)
+        self._int = map(float, self._int)
 
     def get(self, key, default=None):
         return self._meta_information.get(key, default)
@@ -155,16 +157,17 @@ class MBSpectrum(object):
         num_peaks = int(lines[0][len("PK$NUM_PEAK: "):].strip())
 
         # Extract peaks
-        peak_list = []
+        mzs, ints = [], []
         i = 2  # skip: PK$PEAK: m/z int. rel.int.
         while lines[i] != "//\n":
-            peak_list.append(tuple(lines[i].strip().split(" ")))
-            assert len(peak_list[-1]) == 3
+            _mz, _int, _ = lines[i].strip().split(" ")
+            mzs.append(_mz)
+            ints.append(_int)
             i += 1
 
-        assert len(peak_list) == num_peaks, "Length of extracted peak list must be equal 'NUM_PEAK'."
+        assert len(mzs) == num_peaks, "Length of extracted peak list must be equal 'NUM_PEAK'."
 
-        return peak_list
+        return mzs, ints
 
 
 if __name__ == "__main__":
