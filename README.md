@@ -6,4 +6,5 @@
 
   - DB stores more meta information
   - Data filtering, e.g. only include complete entries with MS2 and RT
-  - Load the compound information, such as InChI and SMILES, from ([a local copy](https://github.com/bachi55/local_pubchem_db)) of PubChem using the CID's of the Massbank entries
+  - Load the compound information, such as InChI and SMILES, from ([a local copy](https://github.com/bachi55/local_pubchem_db) of) PubChem using the CID's of the Massbank entries
+  - Add molecular candidates from PubChem for each MS or MS/MS spectrum
