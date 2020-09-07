@@ -71,3 +71,12 @@ For each MS(/MS) spectrum the DB stores meta-information, such as collision eneg
 | ms_type | [MS(1) no fragmentation, MS2 1st generation product ion spectrum, ...](https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#243-acmass_spectrometry-ms_type) | False | None | False |
 | resolution | [Resolution (aka Mass Resolution or Resolving Power) is the smallest mass difference between two equal magnitude peaks so that the valley between them is a specified fraction of the peak height](https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#245-subtag-resolution) | False | None | False |
 | fragmentation_type | [Fragmentation method used for dissociation or fragmentation](https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#245-subtag-fragmentation_mode) | False | None | False | 
+
+### Table: spectra_peaks
+
+This tables stores all peaks, i.e. (m/z, int)-tuples, of Massbank and their associated accessions.
+
+| Column | Description | Primary Key | Foreign Key | Index |
+| spectrum | Spectrum id | False | spectra_meta(accession) | True | 
+| mz | Mass per charge (m/z) of the peak | False | None | False | 
+| itensity | Intensiry of the peak (unnormalized) | False | None | False | 
