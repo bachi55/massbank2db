@@ -24,10 +24,18 @@
 #
 ####
 import re
+import logging
 
 from typing import Dict, List
 
 from massbank2db.parser import get_meta_regex, get_AC_regex, get_CH_regex, get_ms_regex
+
+# Setup the Logger
+LOGGER = logging.getLogger(__name__)
+CH = logging.StreamHandler()
+FORMATTER = logging.Formatter('[%(levelname)s] %(name)s : %(message)s')
+CH.setFormatter(FORMATTER)
+LOGGER.addHandler(CH)
 
 
 class MBSpectrum(object):
@@ -38,8 +46,8 @@ class MBSpectrum(object):
             self._mb_raw, {**get_meta_regex(), **get_ms_regex(), **get_CH_regex(), **get_AC_regex()})
         self._meta_information = self._sanitize_meta_information(meta_information)
         self._mz, self._int = self._parse_peaks(self._mb_raw[i:])
-        self._mz = map(float, self._mz)
-        self._int = map(float, self._int)
+        self._mz = list(map(float, self._mz))
+        self._int = list(map(float, self._int))
 
     def get(self, key, default=None):
         return self._meta_information.get(key, default)
@@ -66,35 +74,35 @@ class MBSpectrum(object):
 
         :return: boolean, indicating whether an update could be performed.
         """
-
-        # inchi, exact mass, molecular weight, molecular formula, inchikey, cid (pubchem), smiles (canonical),
-        # smiles (isomeric)
-
+        # Get the ID, PubChem (cid) or InChIKey, to query information from the local PubChem DB
         if self.get("pubchem_id"):
-            id, id_type = self.get("pubchem_id")
-            id = int(id)
-            id_type = id_type.lower()
+            id, id_type = int(self.get("pubchem_id")), "cid"
         elif self.get("inchikey"):
             id, id_type = self.get("inchikey"), "InChIKey"
         else:
-            print("WARNING: Cannot update molecule structure information for '%s' as no id defined, i.e. pubchem or "
-                  "inchikey." % self.get("accession"))
-            return False
-
-        if id_type == "sid":
+            LOGGER.info("(%s) : Cannot update molecule structure information. No ID defined, either CID or InChIKey."
+                        % self.get("accession"))
             return False
 
         # Fetch information from local DB
+        # TODO: Update also molecular weight. For that we need to rebuild the local PubChem DB.
         rows = db_conn.execute("SELECT cid, InChI, InChIKey, SMILES_CAN, SMILES_ISO, exact_mass, molecular_formula "
                                "    FROM compounds"
-                               "    WHERE %s is ?" % id_type, (id, )).fetchall()
+                               "    WHERE %s is ? "
+                               "    ORDER BY cid ASC" % id_type, (id, )).fetchall()
 
-        if not len(rows):
-            print("WARNING: Could not find any compound with {}={} for {}.".format(id_type, id, self.get("accession")))
+        if len(rows) == 0:
+            LOGGER.info("({}) Could not find any compound with {}={} in the local PubChem DB."
+                        .format(self.get("accession"), id_type, id))
             return False
+        elif len(rows) > 1:
+            assert id_type == "InChIKey"
+            LOGGER.warning("(%s) Multiple compounds (n=%d) matching the InChIKey (%s). Taking the one with the lowest "
+                           "CID to update the compound information." % (self.get("accession"), len(rows), id))
 
         # Update the information
-        for c, name in enumerate(["cid", "inchi", "inchikey", "smiles_can", "smiles_iso", "exact_mass", "molecular_formula"]):
+        for c, name in enumerate(["pubchem_id", "inchi", "inchikey", "smiles_can", "smiles_iso", "exact_mass",
+                                  "molecular_formula"]):
             self.set(name, rows[0][c])
 
         return True
@@ -107,7 +115,7 @@ class MBSpectrum(object):
                 continue
 
             if len(v) == 0:
-                print("WARNING: Empty information for {}={}".format(k, v))
+                LOGGER.warning("Empty information for {}={}".format(k, v))
                 continue
 
             if len(v) == 1:
@@ -116,14 +124,19 @@ class MBSpectrum(object):
                 if k == "retention_time":
                     meta_info_out["retention_time"] = float(v[0])
                     meta_info_out["retention_time_unit"] = v[1]
-                elif k == "pubchem_id":
-                    meta_info_out["pubchem_id"] = (v[1], v[0])  # (id-type, id), e.g. (23525, SID) or (92, CID)
                 else:
                     raise NotImplemented("Multiple outputs for information '%s'.")
         return meta_info_out
 
     @staticmethod
     def _read_mb_file(fn):
+        """
+        Read all lines of a MassBank entry.
+
+        :param fn: string, path to the MassBank entry file
+
+        :return: list of strings, all lines in the MassBank entry
+        """
         with open(fn, "r") as mbfile:
             lines = mbfile.readlines()
         return lines

@@ -28,9 +28,17 @@ import sqlite3
 import os
 import glob
 import re
+import logging
 import pandas as pd
 
 from massbank2db.spectrum import MBSpectrum
+
+# Setup the Logger
+LOGGER = logging.getLogger(__name__)
+CH = logging.StreamHandler()
+FORMATTER = logging.Formatter('[%(levelname)s] %(name)s : %(message)s')
+CH.setFormatter(FORMATTER)
+LOGGER.addHandler(CH)
 
 
 def create_db(file_pth):
@@ -173,49 +181,54 @@ def get_temporal_database(file_pth=":memory:") -> sqlite3.Connection:
 
 
 class MassbankDB(object):
-    """
-
-    """
-    def __init__(self, file_pth, only_with_rt=True, only_ms2=True, only_with_pubchem_info=True,
+    def __init__(self, mb_dbfn, only_with_rt=True, only_ms2=True, use_pubchem_structure_info=True,
                  min_number_of_unique_compounds_per_dataset=50, pubchem_dbfn=None):
-        self.__conn = sqlite3.connect(file_pth)
+        """
+        
+        :param mb_dbfn:
+        :param only_with_rt:
+        :param only_ms2:
+        :param use_pubchem_structure_info:
+        :param min_number_of_unique_compounds_per_dataset:
+        :param pubchem_dbfn:
+        """
+        self.__mb_conn = sqlite3.connect(mb_dbfn)
 
-        if pubchem_dbfn:
-            self.__pc_conn = sqlite3.connect(pubchem_dbfn)
+        # Open a connection to a local PubChemDB if provided
+        if pubchem_dbfn is not None:
+            self.__pc_conn = sqlite3.connect("file:" + pubchem_dbfn + "?mode=ro", uri=True)  # open read-only
         else:
             self.__pc_conn = None
-
-        if not (only_with_rt and only_ms2):
-            raise NotImplementedError("The current filtering only includes accessions with MS2 and RTs.")
 
         # Different filters to exclude entries from the database
         self.__only_with_rt = only_with_rt
         self.__only_ms2 = only_ms2
-        self.__only_with_pubchem_info = only_with_pubchem_info
+        self.__use_pubchem_structure_info = use_pubchem_structure_info
         self.__min_number_of_unique_compounds_per_dataset = min_number_of_unique_compounds_per_dataset
 
     def __enter__(self):
+        """
+        When entering the context manager
+        """
+        # Enable Foreign Key Support (see also: https://sqlite.org/foreignkeys.html#fk_enable)
+        self.__mb_conn.execute("PRAGMA foreign_keys = ON")
+
         return self
 
     def __exit__(self, ext_type, exc_value, traceback):
+        """
+        When leaving the context manager
+        """
         # Rollback Massbank database in case of an error
         if isinstance(exc_value, Exception):
-            self.__conn.rollback()
+            self.__mb_conn.rollback()
 
         # Close connection to the Massbank database
-        self.__conn.close()
+        self.__mb_conn.close()
 
         # Close connection to the PubChem database
         if self.__pc_conn:
             self.__pc_conn.close()
-
-    def _get_db_value_placeholders(self, n):
-        """
-
-        :param n:
-        :return:
-        """
-        return ",".join(['?'] * n)
 
     def insert_dataset(self, accession_prefix, contributor, base_path):
         """
@@ -270,7 +283,8 @@ class MassbankDB(object):
                 assert specs[acc].get("accession") == acc
 
                 if not specs[acc].get("inchikey"):
-                    print("WARNING: No InChIKey for '%s'." % os.path.basename(msfn))
+                    LOGGER.info("(%s) No compound structure information, i.e. no InChIKey."
+                                % os.path.basename(msfn).split(".")[0])
                     continue
 
                 _add_spec_to_filter_db(specs[acc])
@@ -304,8 +318,7 @@ class MassbankDB(object):
                 # -----------------------------------------------------------------------------
                 # Update the molecule structure information in the spectrum file using PubChem:
                 # -----------------------------------------------------------------------------
-                # FIXME: Structures are only updates, if 'self.__only_with_pubchem_info' is True.
-                if self.__only_with_pubchem_info and \
+                if self.__use_pubchem_structure_info and \
                         not specs[acc].update_molecule_structure_information_using_pubchem(self.__pc_conn):
                     continue
 
@@ -313,23 +326,22 @@ class MassbankDB(object):
                 # Insert the spectrum to the database
                 # -----------------------------------
                 try:
-                    with self.__conn:
+                    with self.__mb_conn:
                         self.insert_spectrum(dataset_identifier, contributor, specs[acc])
                 except sqlite3.IntegrityError as err:
-                    print("WARNING: When inserting %s the following SQLite exception was raised: " % acc,
-                          err)
+                    LOGGER.error("({}) SQLite integrity error: {}".format(acc, err))
                     continue
 
             # ----------------------------------------------------
             # Determine the number of spectra and unique compounds
             # ----------------------------------------------------
-            with self.__conn:
-                _num_spec, _num_cmp = self.__conn.execute("SELECT COUNT(accession), COUNT(distinct molecule) "
-                                                          "   FROM spectra_meta "
-                                                          "   WHERE dataset IS ?", (dataset_identifier,)).fetchall()[0]
-                self.__conn.execute("UPDATE datasets "
-                                    "   SET num_spectra = ?, num_compounds = ?"
-                                    "   WHERE name IS ?", (_num_spec, _num_cmp, dataset_identifier))
+            with self.__mb_conn:
+                _num_spec, _num_cmp = self.__mb_conn.execute("SELECT COUNT(accession), COUNT(distinct molecule) "
+                                                             "   FROM spectra_meta "
+                                                             "   WHERE dataset IS ?", (dataset_identifier,)).fetchall()[0]
+                self.__mb_conn.execute("UPDATE datasets "
+                                       "   SET num_spectra = ?, num_compounds = ?"
+                                       "   WHERE name IS ?", (_num_spec, _num_cmp, dataset_identifier))
 
             acc_pref_idx += 1
 
@@ -342,25 +354,24 @@ class MassbankDB(object):
         # ===========================
         # Insert Molecule Information
         # ===========================
-        self.__conn.execute("INSERT OR IGNORE INTO molecules VALUES (%s)" % self._get_db_value_placeholders(9),
-                            (
-                                spectrum.get("cid"),
-                                spectrum.get("inchi"),
-                                spectrum.get("inchikey"),
-                                spectrum.get("inchikey").split("-")[0],
-                                spectrum.get("inchikey").split("-")[1],
-                                spectrum.get("smiles_iso"),
-                                spectrum.get("smiles_can"),
-                                spectrum.get("exact_mass"),
-                                spectrum.get("molecular_formula")
-                            ))
+        self.__mb_conn.execute("INSERT OR IGNORE INTO molecules VALUES (%s)" % self._get_db_value_placeholders(9),
+                               (
+                                   spectrum.get("pubchem_id"),
+                                   spectrum.get("inchi"),
+                                   spectrum.get("inchikey"),
+                                   spectrum.get("inchikey").split("-")[0],
+                                   spectrum.get("inchikey").split("-")[1],
+                                   spectrum.get("smiles_iso"),
+                                   spectrum.get("smiles_can"),
+                                   spectrum.get("exact_mass"),
+                                   spectrum.get("molecular_formula")
+                               ))
 
         # ==========================
         # Insert Dataset Information
         # ==========================
         ion_mode = spectrum.get("ion_mode")
         if not ion_mode:
-            print("Get ion mode from precursor type.")
             # have to do special check for ionization mode (as sometimes gets missed)
             m = re.search("^\[.*\](\-|\+)", spectrum.get("precursor_type"), re.IGNORECASE)
             if m:
@@ -373,44 +384,44 @@ class MassbankDB(object):
                     raise RuntimeError("Ups")
         else:
             ion_mode = ion_mode.lower()
-        self.__conn.execute("INSERT OR IGNORE INTO datasets VALUES (%s)" % self._get_db_value_placeholders(18),
-                            (
-                                dataset_identifier,
-                                contributor,
-                                ion_mode,
-                                0,
-                                0,
-                                spectrum.get("copyright"),
-                                spectrum.get("license"),
-                                spectrum.get("column_name"),
-                                "",  # FIXME: column type, e.g. RP or HILIC, is not specified in the Massbank file
-                                spectrum.get("column_temperature"),
-                                spectrum.get("flow_gradient"),
-                                spectrum.get("flow_rate"),
-                                spectrum.get("solvent_A"),
-                                spectrum.get("solvent_B"),
-                                spectrum.get("solvent"),
-                                spectrum.get("instrument_type"),
-                                spectrum.get("instrument"),
-                                None  # TODO: the column dead-time needs to be estimated from the data
-                            ))
+        self.__mb_conn.execute("INSERT OR IGNORE INTO datasets VALUES (%s)" % self._get_db_value_placeholders(18),
+                               (
+                                   dataset_identifier,
+                                   contributor,
+                                   ion_mode,
+                                   0,
+                                   0,
+                                   spectrum.get("copyright"),
+                                   spectrum.get("license"),
+                                   spectrum.get("column_name"),
+                                   "",  # FIXME: column type, e.g. RP or HILIC, is not specified in the Massbank file
+                                   spectrum.get("column_temperature"),
+                                   spectrum.get("flow_gradient"),
+                                   spectrum.get("flow_rate"),
+                                   spectrum.get("solvent_A"),
+                                   spectrum.get("solvent_B"),
+                                   spectrum.get("solvent"),
+                                   spectrum.get("instrument_type"),
+                                   spectrum.get("instrument"),
+                                   None  # TODO: the column dead-time needs to be estimated from the data
+                               ))
 
         # ===============================
         # Insert Spectra Meta Information
         # ===============================
-        self.__conn.execute("INSERT INTO spectra_meta VALUES (%s)" % self._get_db_value_placeholders(10),
-                            (
-                                spectrum.get("accession"),
-                                dataset_identifier,
-                                spectrum.get("record_title"),
-                                spectrum.get("cid"),
-                                spectrum.get("precursor_mz"),
-                                spectrum.get("precursor_type"),
-                                spectrum.get("collision_energy"),
-                                spectrum.get("ms_type"),
-                                spectrum.get("resolution"),
-                                spectrum.get("fragmentation_mode"),
-                            ))
+        self.__mb_conn.execute("INSERT INTO spectra_meta VALUES (%s)" % self._get_db_value_placeholders(10),
+                               (
+                                   spectrum.get("accession"),
+                                   dataset_identifier,
+                                   spectrum.get("record_title"),
+                                   spectrum.get("pubchem_id"),
+                                   spectrum.get("precursor_mz"),
+                                   spectrum.get("precursor_type"),
+                                   spectrum.get("collision_energy"),
+                                   spectrum.get("ms_type"),
+                                   spectrum.get("resolution"),
+                                   spectrum.get("fragmentation_mode"),
+                               ))
 
         # ====================
         # Insert Spectra Peaks
@@ -418,29 +429,38 @@ class MassbankDB(object):
         _mz, _int = spectrum.get_mz(), spectrum.get_int()
         _n_peaks = len(_mz)
         _acc = [spectrum.get("accession")] * _n_peaks
-        self.__conn.executemany("INSERT INTO spectra_peaks VALUES(%s)" % self._get_db_value_placeholders(3),
-                                zip(_acc, _mz, _int))
+        self.__mb_conn.executemany("INSERT INTO spectra_peaks VALUES(%s)" % self._get_db_value_placeholders(3),
+                                   zip(_acc, _mz, _int))
 
         # =====================
         # Insert Retention Time
         # =====================
         if spectrum.get("retention_time_unit") == '':
             if spectrum.get("retention_time") > 100:
-                print("WARNING: Retention time unit default (min) does not look reasonable for %s with rt=%.3f"
-                      % (spectrum.get("accession"), spectrum.get("retention_time")))
+                LOGGER.warning("(%s) Retention time unit default (=min) does not look reasonable: rt=%.3f"
+                               % (spectrum.get("accession"), spectrum.get("retention_time")))
 
-            self.__conn.execute("INSERT INTO spectra_raw_rts (spectrum, retention_time) VALUES(?, ?)",
-                                (
+            self.__mb_conn.execute("INSERT INTO spectra_raw_rts (spectrum, retention_time) VALUES(?, ?)",
+                                   (
                                     spectrum.get("accession"),
                                     spectrum.get("retention_time"),
-                                ))
+                                   ))
         else:
-            self.__conn.execute("INSERT INTO spectra_raw_rts VALUES(?, ?, ?)",
-                                (
+            self.__mb_conn.execute("INSERT INTO spectra_raw_rts VALUES(?, ?, ?)",
+                                   (
                                     spectrum.get("accession"),
                                     spectrum.get("retention_time"),
                                     spectrum.get("retention_time_unit")
-                                ))
+                                   ))
+
+    @staticmethod
+    def _get_db_value_placeholders(n, placeholder='?'):
+        """
+
+        :param n:
+        :return:
+        """
+        return ",".join([placeholder] * n)
 
             
 if __name__ == "__main__":
@@ -460,7 +480,7 @@ if __name__ == "__main__":
 
     for idx, row in mbds.iterrows():
         print("(%02d/%02d) %s: " % (idx + 1, len(mbds), row["Contributor"]))
-        for pref in row["AccPref"].split(","):
+        for pref in map(str.strip, row["AccPref"].split(",")):
             print(pref)
             with MassbankDB(dbfn, pubchem_dbfn=pubchem_dbfn) as mbdb:
                 mbdb.insert_dataset(pref, row["Contributor"], massbank_dir)

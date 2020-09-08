@@ -1,4 +1,5 @@
 .idea
 *.egg-info
 **/*.sqlite
+**/*.sqlite-journal
 __pycache__
