@@ -2,9 +2,9 @@ from setuptools import setup, find_packages
 
 setup(
     name="massbank2db",
-    version="0.0.1",
+    version="0.1.0",
     license="MIT",
-    packages=find_packages(exclude=["tests", "examples", "*.ipynb", "get_list_of_datasets.py"]),
+    packages=find_packages(exclude=["tests", "examples", "*.ipynb", "inspect_candidates.py"]),
 
     # Minimum requirements the package was tested with
     install_requires=[

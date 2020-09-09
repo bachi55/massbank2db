@@ -39,15 +39,19 @@ LOGGER.addHandler(CH)
 
 
 class MBSpectrum(object):
-    def __init__(self, fn):
-        self._fn = fn
-        self._mb_raw = self._read_mb_file(self._fn)
-        meta_information, i = self._parse_meta_information(
-            self._mb_raw, {**get_meta_regex(), **get_ms_regex(), **get_CH_regex(), **get_AC_regex()})
-        self._meta_information = self._sanitize_meta_information(meta_information)
-        self._mz, self._int = self._parse_peaks(self._mb_raw[i:])
-        self._mz = list(map(float, self._mz))
-        self._int = list(map(float, self._int))
+    def __init__(self, fn=None):
+        if fn is not None:
+            mb_raw = self._read_mb_file(fn)
+            meta_information, i = self._parse_meta_information(
+                mb_raw, {**get_meta_regex(), **get_ms_regex(), **get_CH_regex(), **get_AC_regex()})
+            self._meta_information = self._sanitize_meta_information(meta_information)
+            self._mz, self._int = self._parse_peaks(mb_raw[i:])
+            self._mz = list(map(float, self._mz))
+            self._int = list(map(float, self._int))
+        else:
+            self._meta_information = {}
+            self._mz = []
+            self._int = []
 
     def get(self, key, default=None):
         return self._meta_information.get(key, default)

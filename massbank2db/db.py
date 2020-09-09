@@ -30,6 +30,7 @@ import glob
 import re
 import logging
 import pandas as pd
+import numpy as np
 
 from hashlib import sha1
 
@@ -188,7 +189,7 @@ def get_temporal_database(file_pth=":memory:") -> sqlite3.Connection:
 
 class MassbankDB(object):
     def __init__(self, mb_dbfn, only_with_rt=True, only_ms2=True, use_pubchem_structure_info=True,
-                 exclude_deprecated=True, min_number_of_unique_compounds_per_dataset=50, pubchem_dbfn=None):
+                 exclude_deprecated=True, min_number_of_unique_compounds_per_dataset=50, pc_dbfn=None):
         """
         
         :param mb_dbfn:
@@ -196,13 +197,13 @@ class MassbankDB(object):
         :param only_ms2:
         :param use_pubchem_structure_info:
         :param min_number_of_unique_compounds_per_dataset:
-        :param pubchem_dbfn:
+        :param pc_dbfn:
         """
         self.__mb_conn = sqlite3.connect(mb_dbfn)
 
         # Open a connection to a local PubChemDB if provided
-        if pubchem_dbfn is not None:
-            self.__pc_conn = sqlite3.connect("file:" + pubchem_dbfn + "?mode=ro", uri=True)  # open read-only
+        if pc_dbfn is not None:
+            self.__pc_conn = sqlite3.connect("file:" + pc_dbfn + "?mode=ro", uri=True)  # open read-only
         else:
             self.__pc_conn = None
 
@@ -272,7 +273,7 @@ class MassbankDB(object):
                        solvent_A, solvent_B, solvent, spec.get("column_temperature"), spec.get("inchikey"),
                        spec.get("ms_type"), spec.get("retention_time"))
 
-            filter_db_conn.execute("INSERT INTO information VALUES(%s)" % (",".join(["?"] * len(new_row)),),
+            filter_db_conn.execute("INSERT INTO information VALUES(%s)" % self._get_db_value_placeholders(len(new_row)),
                                    new_row)
 
         # ================================================================
@@ -484,18 +485,110 @@ class MassbankDB(object):
             self.__mb_conn.execute("UPDATE spectra_meta SET spectra_group = ? "
                                    "    WHERE accession IN %s" % l_accs, (acc_grp_id, ))
 
-    # def get_candidates(self, spectrum):
-    #     """
-    #
-    #     :return:
-    #     """
-    #     if not self.__pc_conn:
-    #         raise ValueError("No local PubChem DB. Candidates cannot be queried.")
-    # 
-    #     self.__mb_conn.execute("SELECT ")
-    #
+    def iter_spectra(self, dataset, grouped=True, return_candidates=False, ppm=5):
+        if return_candidates and not self.__pc_conn:
+            raise ValueError("No local PubChem DB. Candidates cannot be queried.")
 
+        if grouped:
+            # rows = self.__mb_conn.execute("SELECT GROUP_CONCAT(accession), dataset, molecule, precursor_mz,"
+            #                               "       precursor_type, GROUP_CONCAT(collision_energy),"
+            #                               "       GROUP_CONCAT(ms_type), resolution, fragmentation_mode "
+            #                               "   FROM spectra_meta "
+            #                               "   WHERE dataset IS ? "
+            #                               "   GROUP BY dataset, molecule, precursor_mz, precursor_type, resolution,"
+            #                               "            fragmentation_mode", (dataset, ))
 
+            rows = self.__mb_conn.execute("SELECT GROUP_CONCAT(accession), dataset, molecule, precursor_mz,"
+                                          "       precursor_type, GROUP_CONCAT(collision_energy),"
+                                          "       GROUP_CONCAT(ms_type), GROUP_CONCAT(resolution), fragmentation_mode "
+                                          "   FROM spectra_meta "
+                                          "   WHERE dataset IS ? "
+                                          "   GROUP BY dataset, molecule, precursor_mz, precursor_type,"
+                                          "            fragmentation_mode", (dataset,))
+        else:
+            rows = self.__mb_conn.execute("SELECT accession, dataset, molecule, precursor_mz, precursor_type, "
+                                          "       collision_energy, ms_type, resolution, fragmentation_mode "
+                                          "   FROM spectra_meta "
+                                          "   WHERE dataset IS ?", (dataset,))
+
+        for row in rows:
+            specs = []
+
+            # -------------------------
+            # Load compound information
+            # -------------------------
+            # Note: This is equal for all spectra, if grouped, as the compound is a grouping criteria.
+            mol = self.__mb_conn.execute("SELECT * FROM molecules WHERE cid = ?", (row[2],)).fetchall()[0]
+
+            # --------------------------
+            # Load candidate information
+            # --------------------------
+            if return_candidates is None:
+                cands = None
+            elif return_candidates == "mf":
+                cands = self.__pc_conn.execute("SELECT cid, smiles_iso FROM compounds WHERE molecular_formula IS ?",
+                                               (mol[8],)).fetchall()
+            elif return_candidates == "mz":
+                min_exact_mass, max_exact_mass = self._get_ppm_window(mol[7], ppm)
+                cands = self.__pc_conn.execute("SELECT cid, smiles_iso FROM compounds WHERE exact_mass BETWEEN ? AND ?",
+                                               (min_exact_mass, max_exact_mass)).fetchall()
+            else:
+                raise ValueError("Invalid")
+
+            # -----------------------------------------------------
+            # Create a Spectrum object for all spectra in the group
+            # -----------------------------------------------------
+            for acc, ce, ms_type in zip(row[0].split(","), row[5].split(","), row[6].split(",")):
+                specs.append(MBSpectrum())
+
+                # --------------------------
+                # Data about the acquisition
+                # --------------------------
+                specs[-1].set("accession", acc)
+                specs[-1].set("dataset", row[1])
+                specs[-1].set("precursor_mz", row[3])
+                specs[-1].set("precursor_type", row[4])
+                specs[-1].set("collision_energy", ce)
+                specs[-1].set("ms_type", ms_type)
+                specs[-1].set("resolution", row[7])
+                specs[-1].set("fragmentation_mode", row[8])
+
+                # -------------------
+                # Retention time data
+                # -------------------
+                rt, rt_unit = self.__mb_conn.execute("SELECT retention_time, retention_time_unit FROM spectra_raw_rts"
+                                                     "   WHERE spectrum IS ?", (acc, )).fetchall()[0]
+                specs[-1].set("retention_time", rt)
+                specs[-1].set("retention_time_unit", rt_unit)
+
+                # --------------------
+                # Compound information
+                # --------------------
+                specs[-1].set("pubchem_id", mol[0])
+                specs[-1].set("inchi", mol[1])
+                specs[-1].set("inchikey", mol[2])
+                specs[-1].set("smiles_iso", mol[5])
+                specs[-1].set("smiles_can", mol[6])
+                specs[-1].set("exact_mass", mol[7])
+                specs[-1].set("molecular_formula", mol[8])
+
+                # --------------
+                # Spectrum peaks
+                # --------------
+                # TODO: Remove loop here
+                peaks = self.__mb_conn.execute("SELECT mz, intensity FROM spectra_peaks "
+                                               "    WHERE spectrum IS ? ORDER BY mz", (acc, ))
+                specs[-1]._mz, specs[-1]._int = [], []
+                for peak in peaks:
+                    specs[-1]._mz.append(peak[0])
+                    specs[-1]._int.append(peak[1])
+
+            yield mol, specs, cands
+
+    @staticmethod
+    def _get_ppm_window(exact_mass, ppm):
+        abs_deviation = exact_mass / 1e6 * ppm
+        return exact_mass - abs_deviation, exact_mass + abs_deviation
 
     @staticmethod
     def _get_db_value_placeholders(n, placeholder='?'):
@@ -544,5 +637,5 @@ if __name__ == "__main__":
         print("(%02d/%02d) %s: " % (idx + 1, len(mbds), row["Contributor"]))
         for pref in map(str.strip, row["AccPref"].split(",")):
             print(pref)
-            with MassbankDB(dbfn, pubchem_dbfn=pubchem_dbfn) as mbdb:
+            with MassbankDB(dbfn, pc_dbfn=pubchem_dbfn) as mbdb:
                 mbdb.insert_dataset(pref, row["Contributor"], massbank_dir)
