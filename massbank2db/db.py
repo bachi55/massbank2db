@@ -31,6 +31,8 @@ import re
 import logging
 import pandas as pd
 
+from hashlib import sha1
+
 from massbank2db.spectrum import MBSpectrum
 
 # Setup the Logger
@@ -101,6 +103,10 @@ def create_db(file_pth):
         )
 
         # Spectra Meta-information table
+        # Note:
+        #   "[...] if the foreign key column in the track table is NULL, then no corresponding entry in the artist
+        #   table is required."
+        #   Source: https://sqlite.org/foreignkeys.html#fk_basics
         conn.execute(
             "CREATE TABLE spectra_meta( \
                 accession           VARCHAR PRIMARY KEY NOT NULL, \
@@ -113,9 +119,12 @@ def create_db(file_pth):
                 ms_type             VARCHAR NOT NULL, \
                 resolution          FLOAT, \
                 fragmentation_mode  VARCHAR, \
-             FOREIGN KEY(molecule)  REFERENCES molecules(cid),\
-             FOREIGN KEY(dataset)   REFERENCES datasets(name) ON DELETE CASCADE)"
+                spectra_group       VARCHAR, \
+             FOREIGN KEY(molecule)      REFERENCES molecules(cid),\
+             FOREIGN KEY(dataset)       REFERENCES datasets(name) ON DELETE CASCADE)"
         )
+        conn.execute("CREATE INDEX IF NOT EXISTS spectra_meta_dataset_index ON spectra_meta(dataset)")
+        conn.execute("CREATE INDEX IF NOT EXISTS spectra_meta_spectra_group_index ON spectra_meta(spectra_group)")
 
         # Spectra Retention Time information table
         conn.execute(
@@ -144,16 +153,13 @@ def create_db(file_pth):
                 spectrum      VARCHAR NOT NULL, \
                 candidate     INTEGER NOT NULL, \
                 mf_gt_equal   INTEGER NOT NULL, \
-                mf_pred_equal INTEGER NOT NULL, \
                 ppm_diff_gt   FLOAT NOT NULL, \
-                ppm_diff_est  FLOAT NOT NULL, \
              FOREIGN KEY(spectrum)  REFERENCES spectra_meta(accession)  ON DELETE CASCADE, \
              FOREIGN KEY(candidate) REFERENCES molecules(cid)           ON DELETE CASCADE, \
              PRIMARY KEY(spectrum, candidate))")
         conn.execute("CREATE INDEX IF NOT EXISTS spectra_candidates_spectrum_index ON spectra_candidates(spectrum)")
         conn.execute("CREATE INDEX IF NOT EXISTS spectra_candidates_candidate_index ON spectra_candidates(candidate)")
         conn.execute("CREATE INDEX IF NOT EXISTS spectra_candidates_ppm_diff_index ON spectra_candidates(ppm_diff_gt)")
-        conn.execute("CREATE INDEX IF NOT EXISTS spectra_candidates_ppm_diff_index ON spectra_candidates(ppm_diff_est)")
 
 
 def get_temporal_database(file_pth=":memory:") -> sqlite3.Connection:
@@ -182,7 +188,7 @@ def get_temporal_database(file_pth=":memory:") -> sqlite3.Connection:
 
 class MassbankDB(object):
     def __init__(self, mb_dbfn, only_with_rt=True, only_ms2=True, use_pubchem_structure_info=True,
-                 min_number_of_unique_compounds_per_dataset=50, pubchem_dbfn=None):
+                 exclude_deprecated=True, min_number_of_unique_compounds_per_dataset=50, pubchem_dbfn=None):
         """
         
         :param mb_dbfn:
@@ -205,6 +211,7 @@ class MassbankDB(object):
         self.__only_ms2 = only_ms2
         self.__use_pubchem_structure_info = use_pubchem_structure_info
         self.__min_number_of_unique_compounds_per_dataset = min_number_of_unique_compounds_per_dataset
+        self.__exclude_deprecated = exclude_deprecated
 
     def __enter__(self):
         """
@@ -282,9 +289,12 @@ class MassbankDB(object):
                 specs[acc] = MBSpectrum(msfn)
                 assert specs[acc].get("accession") == acc
 
-                if not specs[acc].get("inchikey"):
-                    LOGGER.info("(%s) No compound structure information, i.e. no InChIKey."
-                                % os.path.basename(msfn).split(".")[0])
+                if specs[acc].get("inchikey") is None:
+                    LOGGER.info("(%s) No compound structure information, i.e. no InChIKey." % acc)
+                    continue
+
+                if specs[acc].get("deprecated") is not None:
+                    LOGGER.info("(%s) Deprecated entry: '%s'" % (acc, specs[acc].get("deprecated")))
                     continue
 
                 _add_spec_to_filter_db(specs[acc])
@@ -342,6 +352,12 @@ class MassbankDB(object):
                 self.__mb_conn.execute("UPDATE datasets "
                                        "   SET num_spectra = ?, num_compounds = ?"
                                        "   WHERE name IS ?", (_num_spec, _num_cmp, dataset_identifier))
+
+            # -----------------------------
+            # Group the spectra for merging
+            # -----------------------------
+            with self.__mb_conn:
+                self.group_spectra()
 
             acc_pref_idx += 1
 
@@ -409,7 +425,7 @@ class MassbankDB(object):
         # ===============================
         # Insert Spectra Meta Information
         # ===============================
-        self.__mb_conn.execute("INSERT INTO spectra_meta VALUES (%s)" % self._get_db_value_placeholders(10),
+        self.__mb_conn.execute("INSERT INTO spectra_meta VALUES (%s)" % self._get_db_value_placeholders(11),
                                (
                                    spectrum.get("accession"),
                                    dataset_identifier,
@@ -421,6 +437,7 @@ class MassbankDB(object):
                                    spectrum.get("ms_type"),
                                    spectrum.get("resolution"),
                                    spectrum.get("fragmentation_mode"),
+                                   None
                                ))
 
         # ====================
@@ -453,6 +470,33 @@ class MassbankDB(object):
                                     spectrum.get("retention_time_unit")
                                    ))
 
+    def group_spectra(self):
+        """
+        Group spectra such that each group represents a set of spectra to merged prior analysis, e.g. using MetFrag or
+        CSI:FingerID.
+        """
+        rows = self.__mb_conn.execute("SELECT dataset, \"('\" || GROUP_CONCAT(accession, \"','\") || \"')\" "
+                                      "   FROM spectra_meta GROUP BY dataset, molecule, precursor_mz, precursor_type,"
+                                      "   resolution, fragmentation_mode")
+
+        for ds, l_accs in rows:
+            acc_grp_id = ds + "_" + sha1(l_accs.encode('utf-8')).hexdigest()[:8]   # e.g. AU_001_3a1fd8de
+            self.__mb_conn.execute("UPDATE spectra_meta SET spectra_group = ? "
+                                   "    WHERE accession IN %s" % l_accs, (acc_grp_id, ))
+
+    # def get_candidates(self, spectrum):
+    #     """
+    #
+    #     :return:
+    #     """
+    #     if not self.__pc_conn:
+    #         raise ValueError("No local PubChem DB. Candidates cannot be queried.")
+    # 
+    #     self.__mb_conn.execute("SELECT ")
+    #
+
+
+
     @staticmethod
     def _get_db_value_placeholders(n, placeholder='?'):
         """
@@ -462,8 +506,26 @@ class MassbankDB(object):
         """
         return ",".join([placeholder] * n)
 
+    @staticmethod
+    def _in_sql(li):
+        """
+        Concatenates a list of strings to a SQLite ready string that can be used in combination
+        with the 'in' statement.
+
+        E.g.:
+            ["house", "boat", "donkey"] --> "('house', 'boat', 'donkey')"
+
+
+        :param li: list of strings
+
+        :return: SQLite ready string for 'in' statement
+        """
+        return "(" + ",".join(["'%s'" % li for li in np.atleast_1d(li)]) + ")"
+
             
 if __name__ == "__main__":
+    LOGGER.setLevel(logging.INFO)
+
     massbank_dir = "/run/media/bach/EVO500GB/data/MassBank"
 
     dbfn = "tests/test_DB.sqlite"

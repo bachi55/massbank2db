@@ -48,7 +48,8 @@ def get_meta_regex(compile=True) -> dict:
 
             list of re.Pattern, pre-compiled regular expressions to extract the information
     """
-    regex = {'accession':    ['^ACCESSION:(.*)$'],
+    regex = {'accession':    ['^ACCESSION:\s+(.*)$'],
+             'deprecated':   ['^DEPRECATED:\s+(.*)$'],
              'copyright':    ['^COPYRIGHT:\s+(.*)'],
              'origin':       ['^origin(?:=|:)(.*)$'],
              'record_title': ['^RECORD_TITLE:\s+(.*)$']}

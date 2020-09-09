@@ -25,7 +25,7 @@
 ####
 import unittest
 
-from massbank2db.parser import get_AC_regex, get_CH_regex
+from massbank2db.parser import get_AC_regex, get_CH_regex, get_meta_regex
 
 
 class TestRegularExpressions(unittest.TestCase):
@@ -79,6 +79,17 @@ class TestRegularExpressions(unittest.TestCase):
                 self.assertEqual(cid, matches.groups()[0])
             else:
                 self.assertIs(None, matches)
+
+    def test_meta_accession(self):
+        rex = get_meta_regex()["accession"]
+
+        acc_str_val = [("ACCESSION: XY000010", "XY000010"),
+                       ("ACCESSION: AUD43241", "AUD43241")]
+
+        for line, acc in acc_str_val:
+            matches = rex[0].match(line)
+
+            self.assertEqual(acc, matches.groups()[0])
 
 
 if __name__ == '__main__':
