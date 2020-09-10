@@ -44,149 +44,6 @@ CH.setFormatter(FORMATTER)
 LOGGER.addHandler(CH)
 
 
-def create_db(file_pth):
-    """
-    Create an SQLite DB to store the Massbank data.
-
-    :param file_pth: string, DB file path.
-
-    Example:
-        >>> from massbank2db.db import create_db
-        >>> db_pth = 'library.db'
-        >>> create_db(file_pth=db_pth)
-    """
-    with sqlite3.connect(file_pth) as conn:
-        for table_name in ["spectra_candidates", "spectra_peaks", "spectra_raw_rts", "spectra_meta", "datasets",
-                           "molecules"]:
-            conn.execute("DROP TABLE IF EXISTS %s" % table_name)
-
-        # Molecules Table
-        conn.execute(
-            "CREATE TABLE molecules( \
-                 cid               INTEGER PRIMARY KEY NOT NULL, \
-                 inchi             VARCHAR NOT NULL, \
-                 inchikey          VARCHAR NOT NULL, \
-                 inchikey1         VARCHAR NOT NULL, \
-                 inchikey2         VARCHAR NOT NULL, \
-                 smiles_iso        VARCHAR NOT NULL, \
-                 smiles_can        VARCHAR NOT NULL, \
-                 exact_mass        FLOAT NOT NULL, \
-                 molecular_formula VARCHAR NOT NULL)")
-        conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey_index ON molecules(inchikey)")
-        conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey1_index ON molecules(inchikey1)")
-        conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey2_index ON molecules(inchikey2)")
-        conn.execute("CREATE INDEX IF NOT EXISTS molecules_exact_mass_index ON molecules(exact_mass)")
-        conn.execute("CREATE INDEX IF NOT EXISTS molecules_mf_index ON molecules(molecular_formula)")
-
-        # Datasets Meta-information table
-        #   primary key: Accession prefix + some running id
-        #                E.g. AU_001, AU_002
-        conn.execute(
-            "CREATE TABLE datasets( \
-                name                VARCHAR PRIMARY KEY NOT NULL, \
-                contributor         VARCHAR NOT NULL, \
-                ion_mode            VARCHAR NOT NULL, \
-                num_spectra         INTEGER, \
-                num_compounds       INTEGER, \
-                copyright           VARCHAR, \
-                license             VARCHAR, \
-                column_name         VARCHAR NOT NULL, \
-                column_type         VARCHAR NOT NULL, \
-                column_temperature  FLOAT, \
-                flow_gradient       VARCHAR NOT NULL, \
-                flow_rate           FLOAT, \
-                solvent_A           VARCHAR NOT NULL, \
-                solvent_B           VARCHAR NOT NULL, \
-                solvent             VARCHAR, \
-                instrument_type     VARCHAR NOT NULL, \
-                instrument          VARCHAR NOT NULL, \
-                column_dead_time    FLOAT)"
-        )
-
-        # Spectra Meta-information table
-        # Note:
-        #   "[...] if the foreign key column in the track table is NULL, then no corresponding entry in the artist
-        #   table is required."
-        #   Source: https://sqlite.org/foreignkeys.html#fk_basics
-        conn.execute(
-            "CREATE TABLE spectra_meta( \
-                accession           VARCHAR PRIMARY KEY NOT NULL, \
-                dataset             VARCHAR NOT NULL, \
-                record_title        VARCHAR NOT NULL, \
-                molecule            INTEGER NOT NULL, \
-                precursor_mz        FLOAT NOT NULL, \
-                precursor_type      FLOAT NOT NULL, \
-                collision_energy    FLOAT, \
-                ms_type             VARCHAR NOT NULL, \
-                resolution          FLOAT, \
-                fragmentation_mode  VARCHAR, \
-                spectra_group       VARCHAR, \
-             FOREIGN KEY(molecule)      REFERENCES molecules(cid),\
-             FOREIGN KEY(dataset)       REFERENCES datasets(name) ON DELETE CASCADE)"
-        )
-        conn.execute("CREATE INDEX IF NOT EXISTS spectra_meta_dataset_index ON spectra_meta(dataset)")
-        conn.execute("CREATE INDEX IF NOT EXISTS spectra_meta_spectra_group_index ON spectra_meta(spectra_group)")
-
-        # Spectra Retention Time information table
-        conn.execute(
-            "CREATE TABLE spectra_raw_rts( \
-                spectrum            VARCHAR NOT NULL, \
-                retention_time      FLOAT NOT NULL, \
-                retention_time_unit VARCHAR DEFAULT 'min', \
-             FOREIGN KEY(spectrum) REFERENCES spectra_meta(accession) ON DELETE CASCADE)"
-        )
-        conn.execute("CREATE INDEX IF NOT EXISTS spectra_raw_rts_spectrum_index ON spectra_raw_rts(spectrum)")
-        conn.execute("CREATE INDEX IF NOT EXISTS spectra_raw_rts_retention_time_index ON spectra_raw_rts(retention_time)")
-
-        # Spectra Peak Information table
-        conn.execute(
-            "CREATE TABLE spectra_peaks( \
-                spectrum  VARCHAR NOT NULL, \
-                mz        FLOAT NOT NULL, \
-                intensity FLOAT NOT NULL, \
-             FOREIGN KEY(spectrum) REFERENCES spectra_meta(accession) ON DELETE CASCADE)"
-        )
-        conn.execute("CREATE INDEX IF NOT EXISTS spectra_peaks_spectrum_index ON spectra_peaks(spectrum)")
-
-        # Spectra candidate information
-        conn.execute(
-            "CREATE TABLE spectra_candidates( \
-                spectrum      VARCHAR NOT NULL, \
-                candidate     INTEGER NOT NULL, \
-                mf_gt_equal   INTEGER NOT NULL, \
-                ppm_diff_gt   FLOAT NOT NULL, \
-             FOREIGN KEY(spectrum)  REFERENCES spectra_meta(accession)  ON DELETE CASCADE, \
-             FOREIGN KEY(candidate) REFERENCES molecules(cid)           ON DELETE CASCADE, \
-             PRIMARY KEY(spectrum, candidate))")
-        conn.execute("CREATE INDEX IF NOT EXISTS spectra_candidates_spectrum_index ON spectra_candidates(spectrum)")
-        conn.execute("CREATE INDEX IF NOT EXISTS spectra_candidates_candidate_index ON spectra_candidates(candidate)")
-        conn.execute("CREATE INDEX IF NOT EXISTS spectra_candidates_ppm_diff_index ON spectra_candidates(ppm_diff_gt)")
-
-
-def get_temporal_database(file_pth=":memory:") -> sqlite3.Connection:
-    conn = sqlite3.connect(file_pth)
-    conn.execute("DROP TABLE IF EXISTS information")
-    conn.execute("CREATE TABLE information ("
-                 "  accession           VARCHAR NOT NULL PRIMARY KEY,"
-                 "  contributor         VARCHAR NOT NULL,"
-                 "  accession_prefix    VARCHAR NOT NULL,"
-                 "  instrument_type     VARCHAR NOT NULL,"
-                 "  instrument          VARCHAR NOT NULL,"
-                 "  ion_mode            VARCHAR NOT NULL,"
-                 "  column_name         VARCHAR,"
-                 "  flow_gradient       VARCHAR,"
-                 "  flow_rate           VARCHAR,"
-                 "  solvent_A           VARCHAR,"
-                 "  solvent_B           VARCHAR,"
-                 "  solvent             VARCHAR,"
-                 "  column_temperature  VARCHAR,"
-                 "  inchikey            VARCHAR NOT NULL,"
-                 "  ms_level            VARCHAR,"       
-                 "  retention_time      FLOAT)")
-
-    return conn
-
-
 class MassbankDB(object):
     def __init__(self, mb_dbfn, only_with_rt=True, only_ms2=True, use_pubchem_structure_info=True,
                  exclude_deprecated=True, min_number_of_unique_compounds_per_dataset=50, pc_dbfn=None):
@@ -238,6 +95,126 @@ class MassbankDB(object):
         if self.__pc_conn:
             self.__pc_conn.close()
 
+    def initialize_tables(self, reset=False):
+        """
+        Initialize the database tables.
+
+        :param reset: boolean, indicating whether the existing tables should be dropped.
+        """
+        with self.__mb_conn:
+            if reset:
+                for table_name in ["spectra_candidates", "spectra_peaks", "spectra_raw_rts", "spectra_meta", "datasets",
+                                   "molecules"]:
+                    self.__mb_conn.execute("DROP TABLE IF EXISTS %s" % table_name)
+
+            # Molecules Table
+            self.__mb_conn.execute(
+                "CREATE TABLE IF NOT EXISTS molecules( \
+                     cid               INTEGER PRIMARY KEY NOT NULL, \
+                     inchi             VARCHAR NOT NULL, \
+                     inchikey          VARCHAR NOT NULL, \
+                     inchikey1         VARCHAR NOT NULL, \
+                     inchikey2         VARCHAR NOT NULL, \
+                     smiles_iso        VARCHAR NOT NULL, \
+                     smiles_can        VARCHAR NOT NULL, \
+                     exact_mass        FLOAT NOT NULL, \
+                     molecular_formula VARCHAR NOT NULL)")
+            self.__mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey_index ON molecules(inchikey)")
+            self.__mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey1_index ON molecules(inchikey1)")
+            self.__mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey2_index ON molecules(inchikey2)")
+            self.__mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_exact_mass_index ON molecules(exact_mass)")
+            self.__mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_mf_index ON molecules(molecular_formula)")
+
+            # Datasets Meta-information table
+            #   primary key: Accession prefix + some running id
+            #                E.g. AU_001, AU_002
+            self.__mb_conn.execute(
+                "CREATE TABLE IF NOT EXISTS datasets( \
+                    name                VARCHAR PRIMARY KEY NOT NULL, \
+                    contributor         VARCHAR NOT NULL, \
+                    ion_mode            VARCHAR NOT NULL, \
+                    num_spectra         INTEGER, \
+                    num_compounds       INTEGER, \
+                    copyright           VARCHAR, \
+                    license             VARCHAR, \
+                    column_name         VARCHAR NOT NULL, \
+                    column_type         VARCHAR NOT NULL, \
+                    column_temperature  FLOAT, \
+                    flow_gradient       VARCHAR NOT NULL, \
+                    flow_rate           FLOAT, \
+                    solvent_A           VARCHAR NOT NULL, \
+                    solvent_B           VARCHAR NOT NULL, \
+                    solvent             VARCHAR, \
+                    instrument_type     VARCHAR NOT NULL, \
+                    instrument          VARCHAR NOT NULL, \
+                    column_dead_time    FLOAT)"
+            )
+
+            # Spectra Meta-information table
+            # Note:
+            #   "[...] if the foreign key column in the track table is NULL, then no corresponding entry in the artist
+            #   table is required."
+            #   Source: https://sqlite.org/foreignkeys.html#fk_basics
+            self.__mb_conn.execute(
+                "CREATE TABLE IF NOT EXISTS spectra_meta( \
+                    accession           VARCHAR PRIMARY KEY NOT NULL, \
+                    dataset             VARCHAR NOT NULL, \
+                    record_title        VARCHAR NOT NULL, \
+                    molecule            INTEGER NOT NULL, \
+                    precursor_mz        FLOAT NOT NULL, \
+                    precursor_type      FLOAT NOT NULL, \
+                    collision_energy    FLOAT, \
+                    ms_type             VARCHAR NOT NULL, \
+                    resolution          FLOAT, \
+                    fragmentation_mode  VARCHAR, \
+                    spectra_group       VARCHAR, \
+                 FOREIGN KEY(molecule)      REFERENCES molecules(cid),\
+                 FOREIGN KEY(dataset)       REFERENCES datasets(name) ON DELETE CASCADE)"
+            )
+            self.__mb_conn.execute("CREATE INDEX IF NOT EXISTS spectra_meta_dataset_index ON spectra_meta(dataset)")
+            self.__mb_conn.execute(
+                "CREATE INDEX IF NOT EXISTS spectra_meta_spectra_group_index ON spectra_meta(spectra_group)")
+
+            # Spectra Retention Time information table
+            self.__mb_conn.execute(
+                "CREATE TABLE IF NOT EXISTS spectra_raw_rts( \
+                    spectrum            VARCHAR NOT NULL, \
+                    retention_time      FLOAT NOT NULL, \
+                    retention_time_unit VARCHAR DEFAULT 'min', \
+                 FOREIGN KEY(spectrum) REFERENCES spectra_meta(accession) ON DELETE CASCADE)"
+            )
+            self.__mb_conn.execute(
+                "CREATE INDEX IF NOT EXISTS spectra_raw_rts_spectrum_index ON spectra_raw_rts(spectrum)")
+            self.__mb_conn.execute(
+                "CREATE INDEX IF NOT EXISTS spectra_raw_rts_retention_time_index ON spectra_raw_rts(retention_time)")
+
+            # Spectra Peak Information table
+            self.__mb_conn.execute(
+                "CREATE TABLE IF NOT EXISTS spectra_peaks( \
+                    spectrum  VARCHAR NOT NULL, \
+                    mz        FLOAT NOT NULL, \
+                    intensity FLOAT NOT NULL, \
+                 FOREIGN KEY(spectrum) REFERENCES spectra_meta(accession) ON DELETE CASCADE)"
+            )
+            self.__mb_conn.execute("CREATE INDEX IF NOT EXISTS spectra_peaks_spectrum_index ON spectra_peaks(spectrum)")
+
+            # Spectra candidate information
+            self.__mb_conn.execute(
+                "CREATE TABLE IF NOT EXISTS spectra_candidates( \
+                    spectrum      VARCHAR NOT NULL, \
+                    candidate     INTEGER NOT NULL, \
+                    mf_gt_equal   INTEGER NOT NULL, \
+                    ppm_diff_gt   FLOAT NOT NULL, \
+                 FOREIGN KEY(spectrum)  REFERENCES spectra_meta(accession)  ON DELETE CASCADE, \
+                 FOREIGN KEY(candidate) REFERENCES molecules(cid)           ON DELETE CASCADE, \
+                 PRIMARY KEY(spectrum, candidate))")
+            self.__mb_conn.execute(
+                "CREATE INDEX IF NOT EXISTS spectra_candidates_spectrum_index ON spectra_candidates(spectrum)")
+            self.__mb_conn.execute(
+                "CREATE INDEX IF NOT EXISTS spectra_candidates_candidate_index ON spectra_candidates(candidate)")
+            self.__mb_conn.execute(
+                "CREATE INDEX IF NOT EXISTS spectra_candidates_ppm_diff_index ON spectra_candidates(ppm_diff_gt)")
+
     def insert_dataset(self, accession_prefix, contributor, base_path):
         """
         Insert all accession of the specified contributor with specified prefix to the database. Each contributor and
@@ -282,7 +259,7 @@ class MassbankDB(object):
         # - group accessions by their MS and LC configuration --> each combination becomes a separate dataset
         # - remove groups of accessions, where we have less than a certain number
         #   (see 'min_number_of_unique_compounds_per_dataset')
-        filter_db_conn = get_temporal_database()  # in memory
+        filter_db_conn = self._get_temporal_database()  # in memory
         specs = {}
         with filter_db_conn:
             for msfn in glob.iglob(os.path.join(base_path, contributor, accession_prefix + "[0-9]*.txt")):
@@ -490,14 +467,6 @@ class MassbankDB(object):
             raise ValueError("No local PubChem DB. Candidates cannot be queried.")
 
         if grouped:
-            # rows = self.__mb_conn.execute("SELECT GROUP_CONCAT(accession), dataset, molecule, precursor_mz,"
-            #                               "       precursor_type, GROUP_CONCAT(collision_energy),"
-            #                               "       GROUP_CONCAT(ms_type), resolution, fragmentation_mode "
-            #                               "   FROM spectra_meta "
-            #                               "   WHERE dataset IS ? "
-            #                               "   GROUP BY dataset, molecule, precursor_mz, precursor_type, resolution,"
-            #                               "            fragmentation_mode", (dataset, ))
-
             rows = self.__mb_conn.execute("SELECT GROUP_CONCAT(accession), dataset, molecule, precursor_mz,"
                                           "       precursor_type, GROUP_CONCAT(collision_energy),"
                                           "       GROUP_CONCAT(ms_type), GROUP_CONCAT(resolution), fragmentation_mode "
@@ -586,6 +555,30 @@ class MassbankDB(object):
             yield mol, specs, cands
 
     @staticmethod
+    def _get_temporal_database(file_pth=":memory:"):
+        conn = sqlite3.connect(file_pth)
+        conn.execute("DROP TABLE IF EXISTS information")
+        conn.execute("CREATE TABLE information ("
+                     "  accession           VARCHAR NOT NULL PRIMARY KEY,"
+                     "  contributor         VARCHAR NOT NULL,"
+                     "  accession_prefix    VARCHAR NOT NULL,"
+                     "  instrument_type     VARCHAR NOT NULL,"
+                     "  instrument          VARCHAR NOT NULL,"
+                     "  ion_mode            VARCHAR NOT NULL,"
+                     "  column_name         VARCHAR,"
+                     "  flow_gradient       VARCHAR,"
+                     "  flow_rate           VARCHAR,"
+                     "  solvent_A           VARCHAR,"
+                     "  solvent_B           VARCHAR,"
+                     "  solvent             VARCHAR,"
+                     "  column_temperature  VARCHAR,"
+                     "  inchikey            VARCHAR NOT NULL,"
+                     "  ms_level            VARCHAR,"
+                     "  retention_time      FLOAT)")
+
+        return conn
+
+    @staticmethod
     def _get_ppm_window(exact_mass, ppm):
         abs_deviation = exact_mass / 1e6 * ppm
         return exact_mass - abs_deviation, exact_mass + abs_deviation
@@ -619,23 +612,26 @@ class MassbankDB(object):
 if __name__ == "__main__":
     LOGGER.setLevel(logging.INFO)
 
+    # Load list of datasets provided by MassBank
     massbank_dir = "/run/media/bach/EVO500GB/data/MassBank"
-
-    dbfn = "tests/test_DB.sqlite"
-    pubchem_dbfn = "/run/media/bach/EVO500GB/data/pubchem_24-06-2019/db/pubchem.sqlite"
-
-    create_db(dbfn)
-
-    # Load list of datasets provided by Massbank
     mbds = pd.read_csv(os.path.join(massbank_dir, "List_of_Contributors_Prefixes_and_Projects.md"),
                        sep="|", skiprows=2, header=None) \
         .iloc[:, [1, 4]] \
         .applymap(str.strip) \
         .rename({1: "Contributor", 4: "AccPref"}, axis=1)  # type: pd.DataFrame
 
+    # Filename of the MassBank (output) DB
+    mb_dbfn = "tests/test_DB.sqlite"
+    with MassbankDB(mb_dbfn) as mbdb:
+        mbdb.initialize_tables(reset=True)
+
+    # Filename of the local PubChem DB
+    pc_dbfn = "/run/media/bach/EVO500GB/data/pubchem_24-06-2019/db/pubchem.sqlite"
+
+    # Insert spectra into the MassBank DB
     for idx, row in mbds.iterrows():
         print("(%02d/%02d) %s: " % (idx + 1, len(mbds), row["Contributor"]))
         for pref in map(str.strip, row["AccPref"].split(",")):
             print(pref)
-            with MassbankDB(dbfn, pc_dbfn=pubchem_dbfn) as mbdb:
+            with MassbankDB(mb_dbfn, pc_dbfn=pc_dbfn) as mbdb:
                 mbdb.insert_dataset(pref, row["Contributor"], massbank_dir)
