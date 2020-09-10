@@ -89,11 +89,14 @@ class MassbankDB(object):
             self.__mb_conn.rollback()
 
         # Close connection to the Massbank database
-        self.__mb_conn.close()
+        self.close()
 
         # Close connection to the PubChem database
         if self.__pc_conn:
             self.__pc_conn.close()
+
+    def close(self):
+        self.__mb_conn.close()
 
     def initialize_tables(self, reset=False):
         """
@@ -468,7 +471,7 @@ class MassbankDB(object):
             # --------------------------
             # Load candidate information
             # --------------------------
-            if return_candidates is None:
+            if not return_candidates:
                 cands = None
             elif return_candidates == "mf":
                 cands = self.__pc_conn.execute("SELECT cid, smiles_iso FROM compounds WHERE molecular_formula IS ?",
@@ -527,6 +530,9 @@ class MassbankDB(object):
                 for peak in peaks:
                     specs[-1]._mz.append(peak[0])
                     specs[-1]._int.append(peak[1])
+
+            if not grouped:
+                specs = specs[0]
 
             yield mol, specs, cands
 
