@@ -167,13 +167,10 @@ class MassbankDB(object):
                     ms_type             VARCHAR NOT NULL, \
                     resolution          FLOAT, \
                     fragmentation_mode  VARCHAR, \
-                    spectra_group       VARCHAR, \
                  FOREIGN KEY(molecule)      REFERENCES molecules(cid),\
                  FOREIGN KEY(dataset)       REFERENCES datasets(name) ON DELETE CASCADE)"
             )
             self.__mb_conn.execute("CREATE INDEX IF NOT EXISTS spectra_meta_dataset_index ON spectra_meta(dataset)")
-            self.__mb_conn.execute(
-                "CREATE INDEX IF NOT EXISTS spectra_meta_spectra_group_index ON spectra_meta(spectra_group)")
 
             # Spectra Retention Time information table
             self.__mb_conn.execute(
@@ -331,12 +328,6 @@ class MassbankDB(object):
                                        "   SET num_spectra = ?, num_compounds = ?"
                                        "   WHERE name IS ?", (_num_spec, _num_cmp, dataset_identifier))
 
-            # -----------------------------
-            # Group the spectra for merging
-            # -----------------------------
-            with self.__mb_conn:
-                self.group_spectra()
-
             acc_pref_idx += 1
 
     def insert_spectrum(self, dataset_identifier: str, contributor: str, spectrum: MBSpectrum):
@@ -403,7 +394,7 @@ class MassbankDB(object):
         # ===============================
         # Insert Spectra Meta Information
         # ===============================
-        self.__mb_conn.execute("INSERT INTO spectra_meta VALUES (%s)" % self._get_db_value_placeholders(11),
+        self.__mb_conn.execute("INSERT INTO spectra_meta VALUES (%s)" % self._get_db_value_placeholders(10),
                                (
                                    spectrum.get("accession"),
                                    dataset_identifier,
@@ -414,8 +405,7 @@ class MassbankDB(object):
                                    spectrum.get("collision_energy"),
                                    spectrum.get("ms_type"),
                                    spectrum.get("resolution"),
-                                   spectrum.get("fragmentation_mode"),
-                                   None
+                                   spectrum.get("fragmentation_mode")
                                ))
 
         # ====================
@@ -447,20 +437,6 @@ class MassbankDB(object):
                                     spectrum.get("retention_time"),
                                     spectrum.get("retention_time_unit")
                                    ))
-
-    def group_spectra(self):
-        """
-        Group spectra such that each group represents a set of spectra to merged prior analysis, e.g. using MetFrag or
-        CSI:FingerID.
-        """
-        rows = self.__mb_conn.execute("SELECT dataset, \"('\" || GROUP_CONCAT(accession, \"','\") || \"')\" "
-                                      "   FROM spectra_meta GROUP BY dataset, molecule, precursor_mz, precursor_type,"
-                                      "   resolution, fragmentation_mode")
-
-        for ds, l_accs in rows:
-            acc_grp_id = ds + "_" + sha1(l_accs.encode('utf-8')).hexdigest()[:8]   # e.g. AU_001_3a1fd8de
-            self.__mb_conn.execute("UPDATE spectra_meta SET spectra_group = ? "
-                                   "    WHERE accession IN %s" % l_accs, (acc_grp_id, ))
 
     def iter_spectra(self, dataset, grouped=True, return_candidates=False, ppm=5):
         if return_candidates and not self.__pc_conn:
