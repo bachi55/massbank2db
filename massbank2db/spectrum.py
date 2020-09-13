@@ -25,8 +25,11 @@
 ####
 import re
 import logging
+import numpy as np
 
+from ctypes import c_double, c_int, byref, cdll
 from typing import Dict, List
+from scipy.spatial.distance import pdist
 
 from massbank2db.parser import get_meta_regex, get_AC_regex, get_CH_regex, get_ms_regex
 
@@ -67,6 +70,15 @@ class MBSpectrum(object):
 
     def get_int(self):
         return self._int
+
+    def get_meta_information(self):
+        return self._meta_information
+
+    def set_mz(self, mz):
+        self._mz = mz
+
+    def set_int(self, ints):
+        self._int = ints
 
     def update_molecule_structure_information_using_pubchem(self, db_conn):
         """
@@ -185,6 +197,93 @@ class MBSpectrum(object):
         assert len(mzs) == num_peaks, "Length of extracted peak list must be equal 'NUM_PEAK'."
 
         return mzs, ints
+
+    @staticmethod
+    def merge_spectra(spectra, eppm=5, eabs=0.001, rt_agg="min"):
+        # TODO: Apply filter to spectra, e.g. normalize intensities, cut of high mass peaks (> precursor mz)
+
+        mzs = []
+        ints = []
+        for spectrum in spectra:
+            mzs += spectrum.get_mz()
+            ints += spectrum.get_int()
+        mzs = np.array(mzs)
+        ints = np.array(ints)
+
+        grouping = mzClust_hclust(mzs, eppm, eabs)
+        print(grouping)
+
+        mzs_out = []
+        ints_out = []
+        for peaks in grouping.values():
+            mzs_out.append(np.mean(mzs[peaks]))
+            ints_out.append(np.max(ints[peaks]))
+        mzs_out = np.array(mzs_out)
+        ints_out = np.array(ints_out)
+
+        _idc_sorted = np.argsort(mzs_out)
+        mzs_out = mzs_out[_idc_sorted].tolist()
+        ints_out = ints_out[_idc_sorted].tolist()
+
+        # TODO: Set properties of the output spectrum.
+        spec_out = MBSpectrum()
+        spec_out.set_mz(mzs_out)
+        spec_out.set_int(ints_out)
+
+        for info in spectra[0].get_meta_information():
+            _info = set()
+            for spectrum in spectra:
+                _info.add(spectrum.get(info))
+
+            if len(_info) == 1:
+                spec_out.set(info, _info.pop())
+            else:
+                spec_out.set(info, [i for i in _info])
+
+        if spec_out.get("retention_time"):
+            assert isinstance(spec_out.get("retention_time_unit"), str)
+
+            if rt_agg == "min":
+                spec_out.set("retention_time", np.min(spec_out.get("retention_time")))
+            elif rt_agg == "mean":
+                spec_out.set("retention_time", np.mean(spec_out.get("retention_time")))
+            elif rt_agg == "median":
+                spec_out.set("retention_time", np.median(spec_out.get("retention_time")))
+            else:
+                ValueError("Invalid retention time aggregation function: '%s'. Choices are: 'min', 'mean' and "
+                           "'median'.")
+
+
+def mzClust_hclust(mzs, eppm, eabs):
+    N = len(mzs)
+
+    # Empty spectrum or single peak: no grouping needed
+    if N < 2:
+        return [1] * N
+
+    # Load the library
+    libclust = cdll.LoadLibrary("src/libclust.so")
+
+    # Convert Python to C variables
+    c_N = c_int(N)
+    c_mzs = (c_double * N)(*mzs)
+    d = pdist(mzs[:, np.newaxis])
+    c_d = (c_double * len(d))(*d)
+    c_eppm = c_double(eppm / 1e6)
+    c_eabs = c_double(eabs)
+    g = np.zeros(N, dtype=int)
+    c_grouping = (c_int * N)(*g)
+
+    # Calculate hierarchical peak clustering
+    libclust.R_mzClust_hclust(byref(c_mzs), byref(c_N), byref(c_d), byref(c_grouping), byref(c_eppm), byref(c_eabs))
+    grouping = {}
+    for i in range(N):
+        try:
+            grouping[c_grouping[i]].append(i)
+        except KeyError:
+            grouping[c_grouping[i]] = [i]
+
+    return grouping
 
 
 if __name__ == "__main__":
