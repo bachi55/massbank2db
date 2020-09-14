@@ -35,6 +35,8 @@ if __name__ == "__main__":
         for mol, specs, cands in mb_db.iter_spectra(dataset="ET_000", return_candidates=False):
             print([spec.get("accession") for spec in specs], mol[3])
 
-            MBSpectrum.merge_spectra(specs)
+            # MBSpectrum.merge_spectra(specs)
+
+            print(specs[0].get("precursor_mz"))
 
             print("bla")

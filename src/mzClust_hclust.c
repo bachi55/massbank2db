@@ -1,5 +1,3 @@
-//#include <R.h>
-//#include <Rdefines.h>
 #include <float.h>
 #include <stdlib.h>
 
@@ -66,16 +64,10 @@ void R_mzClust_hclust(double *x, int *num, double *d, int *g, double *eppm, doub
 		if (mindst == DBL_MAX)
 			break;
 		/* calculate intervall for variable cutoff */
-		means[minclust[0]] = (means[minclust[0]] *
-				      clust[minclust[0] * m] +
-				      means[minclust[1]] *
-				      clust[minclust[1] * m]) / (double)(clust[minclust[0] * m] + clust[minclust[1] * m]);
-		mrange[0] =
-		    means[minclust[0]] - means[minclust[0]] * *eppm -
-		    *eabs;
-		mrange[1] =
-		    means[minclust[0]] + means[minclust[0]] * *eppm +
-		    *eabs;
+		means[minclust[0]] = (means[minclust[0]] * clust[minclust[0] * m] + means[minclust[1]] * clust[minclust[1] * m])
+		    / (double)(clust[minclust[0] * m] + clust[minclust[1] * m]);
+		mrange[0] = means[minclust[0]] - means[minclust[0]] * *eppm - *eabs;
+		mrange[1] = means[minclust[0]] + means[minclust[0]] * *eppm + *eabs;
 
 		/* find outliers */
 		for (i = 1; i <= clust[minclust[0] * m]; i++) {
