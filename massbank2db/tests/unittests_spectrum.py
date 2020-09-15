@@ -24,11 +24,14 @@
 #
 ####
 import unittest
+import glob
+import os
+import numpy as np
 
 from massbank2db.spectrum import MBSpectrum
 
 
-class TestMBSpectrum(unittest.TestCase):
+class TestMBSpectrumParsing(unittest.TestCase):
     def test_peak_parsing(self):
         # Spectrum 1
         peaks = [(65.0388, 454422.7),
@@ -44,7 +47,7 @@ class TestMBSpectrum(unittest.TestCase):
                  (193.0767, 1661789.6),
                  (199.0315, 5538869.4),
                  (201.0474, 7384944.1)]
-        spec = MBSpectrum("./EQ308406.txt")
+        spec = MBSpectrum("./example_massbank_records/EQ308406.txt")
         self.assertEqual(peaks, spec.get_peak_list_as_tuples())
 
         # Spectrum 2
@@ -58,8 +61,185 @@ class TestMBSpectrum(unittest.TestCase):
             (159.032400, 1732.000000),
             (160.040200, 10392.000000),
             (161.043200, 1399.000000)]
-        spec = MBSpectrum("./FIO00665.txt")
+        spec = MBSpectrum("./example_massbank_records/FIO00665.txt")
         self.assertEqual(peaks, spec.get_peak_list_as_tuples())
+
+
+class TestMBSpectrumMergin(unittest.TestCase):
+    def test_metainformation_merging(self):
+        # Load the list of spectra to merge: EA0004[01][0-9].txt --> EAX000401.txt
+        spectra = []
+        acc_ref = []
+        rt_ref = []
+        precmz_ref = []
+        recordtitle_ref = []
+        ce_ref = []
+        for mb_fn in glob.iglob(os.path.join("example_massbank_records", "EA0004[01][0-9].txt")):
+            spectra.append(MBSpectrum(mb_fn))
+
+            # collect some reference meta-information
+            acc_ref.append(os.path.basename(mb_fn).split(".")[0])
+            rt_ref.append(spectra[-1].get("retention_time"))
+            precmz_ref.append(spectra[-1].get("precursor_mz"))
+            recordtitle_ref.append(spectra[-1].get("record_title"))
+            ce_ref.append(spectra[-1].get("collision_energy"))
+
+        # -------------------
+        # WITH RT AGGREGATION
+        # -------------------
+        merged_spectrum = MBSpectrum.merge_spectra(spectra, rt_agg_fun=np.min)  # type: MBSpectrum
+
+        self.assertEqual("OUSYWCQYMPDAEO-UHFFFAOYSA-N", merged_spectrum.get("inchikey"))
+        self.assertEqual(acc_ref, merged_spectrum.get("accession"))
+        self.assertEqual("min", merged_spectrum.get("retention_time_unit"))
+        self.assertEqual(np.min(rt_ref), merged_spectrum.get("retention_time"))
+        self.assertEqual(precmz_ref[0], merged_spectrum.get("precursor_mz"))
+        self.assertEqual(recordtitle_ref, merged_spectrum.get("record_title"))
+        self.assertEqual(ce_ref, merged_spectrum.get("collision_energy"))
+
+        # ----------------------
+        # WITHOUT RT AGGREGATION
+        # ----------------------
+        merged_spectrum = MBSpectrum.merge_spectra(spectra, rt_agg_fun=None)  # type: MBSpectrum
+
+        self.assertEqual("min", merged_spectrum.get("retention_time_unit"))
+        self.assertEqual(rt_ref, merged_spectrum.get("retention_time"))
+
+    def test_spectra_merging__EAX000401(self):
+        """
+        We compare our spectra merging with the strategy applied in [1] and originally proposed in [2].
+
+        References:
+            [1] "MetFrag relaunched: incorporating strategies beyond in silico fragmentation" by Ruttkies et al. (2016)
+            [2] "Alignment of high resolution mass spectra: development of a heuristic approach for metabolomics" by
+                Kazmi et al. (2006)
+        """
+        # Load the list of spectra to merge: EA0004[01][0-9].txt --> EAX000401.txt
+        spectra = []
+        for mb_fn in glob.iglob(os.path.join("example_massbank_records", "EA0004[01][0-9].txt")):
+            spectra.append(MBSpectrum(mb_fn))
+
+        # Run the spectra merging using hierarchical clustering
+        merged_spectrum = MBSpectrum.merge_spectra(spectra)  # type: MBSpectrum
+
+        # Merged spectrum as used by [1]
+        peaks_ref = [
+            (53.03852, 55),
+            (57.0447285714286, 93),
+            (65.0386, 116),
+            (77.0386, 884),
+            (81.03345, 12),
+            (85.0396545454545, 17),
+            (91.0542714285714, 123),
+            (92.0494875, 377),
+            (95.04925, 112),
+            (103.041733333333, 15),
+            (104.049541666667, 999),
+            (105.044757142857, 271),
+            (105.069975, 12),
+            (110.060033333333, 7),
+            (119.060475, 631),
+            (130.04005, 11),
+            (130.0652, 49),
+            (131.07295, 24),
+            (142.0652, 9),
+            (147.0554, 3),
+            (160.087069230769, 999),
+            (188.082038461538, 999)
+        ]
+
+        mzs_ref = list(zip(*peaks_ref))[0]
+        ints_ref = np.array(list(zip(*peaks_ref))[1])
+
+        np.testing.assert_almost_equal(mzs_ref, merged_spectrum.get_mz())
+        np.testing.assert_almost_equal(ints_ref / 999, merged_spectrum.get_int(), decimal=3)
+
+    def test_spectra_merging__EAX281502(self):
+        """
+        We compare our spectra merging with the strategy applied in [1] and originally proposed in [2].
+
+        References:
+            [1] "MetFrag relaunched: incorporating strategies beyond in silico fragmentation" by Ruttkies et al. (2016)
+            [2] "Alignment of high resolution mass spectra: development of a heuristic approach for metabolomics" by
+                Kazmi et al. (2006)
+        """
+        # Load the list of spectra to merge: EA2815[56][0-9].txt --> EAX281502.txt
+        spectra = []
+        for mb_fn in glob.iglob(os.path.join("example_massbank_records", "EA2815[56][0-9].txt")):
+            spectra.append(MBSpectrum(mb_fn))
+
+        # Run the spectra merging using hierarchical clustering
+        merged_spectrum = MBSpectrum.merge_spectra(spectra)  # type: MBSpectrum
+
+        # Merged spectrum as used by [1]
+        peaks_ref = [
+            (81.0220667, 257.0000000),
+            (96.0095000, 226.0000000),
+            (109.0170500, 259.0000000),
+            (111.0198667, 290.0000000),
+            (116.0504625, 559.0000000),
+            (118.0663111, 999.0000000),
+            (126.1288286, 348.0000000),
+            (156.0821000, 84.0000000),
+            (170.1188000, 2.0000000),
+            (172.0770500, 54.0000000),
+            (174.0561667, 114.0000000),
+            (182.1189250, 95.0000000),
+            (197.1296571, 173.0000000),
+            (200.0717900, 999.0000000),
+            (227.1402000, 67.0000000),
+            (230.1551000, 290.0000000),
+            (244.0616500, 15.0000000),
+            (257.2023400, 218.0000000),
+            (273.1971500, 176.0000000),
+            (276.0872500, 3.0000000),
+            (283.1819500, 70.0000000),
+            (285.1611800, 381.0000000),
+            (301.1921875, 459.0000000),
+            (317.1871200, 142.0000000),
+            (327.1710000, 128.0000000),
+            (331.2034500, 3.0000000),
+            (345.1821167, 999.0000000),
+            (359.1974333, 177.0000000),
+            (377.2083750, 999.0000000)
+        ]
+
+        mzs_ref = list(zip(*peaks_ref))[0]
+        ints_ref = np.array(list(zip(*peaks_ref))[1])
+
+        np.testing.assert_almost_equal(mzs_ref, merged_spectrum.get_mz())
+        np.testing.assert_almost_equal(ints_ref / 999, merged_spectrum.get_int(), decimal=3)
+
+    def test_spectra_merging__EAX000402(self):
+        """
+        We compare our spectra merging with the strategy applied in [1] and originally proposed in [2].
+
+        References:
+            [1] "MetFrag relaunched: incorporating strategies beyond in silico fragmentation" by Ruttkies et al. (2016)
+            [2] "Alignment of high resolution mass spectra: development of a heuristic approach for metabolomics" by
+                Kazmi et al. (2006)
+        """
+        # self.skipTest("Intensities are wired in the original file: EAX000402")
+
+        # Load the list of spectra to merge: EA0004[56][0-9].txt --> EAX000402.txt
+        spectra = []
+        for mb_fn in glob.iglob(os.path.join("example_massbank_records", "EA0004[56][0-9].txt")):
+            spectra.append(MBSpectrum(mb_fn))
+
+        # Run the spectra merging using hierarchical clustering
+        merged_spectrum = MBSpectrum.merge_spectra(spectra)  # type: MBSpectrum
+
+        # Merged spectrum as used by [1]
+        peaks_ref = [
+            (117.0347000, 999),
+            (186.0677308, 999)
+        ]
+
+        mzs_ref = list(zip(*peaks_ref))[0]
+        ints_ref = np.array(list(zip(*peaks_ref))[1])
+
+        np.testing.assert_almost_equal(mzs_ref, merged_spectrum.get_mz())
+        np.testing.assert_almost_equal(ints_ref / 999, merged_spectrum.get_int())
 
 
 if __name__ == '__main__':

@@ -25,9 +25,13 @@
 ####
 import re
 import logging
+import numpy as np
 
+from ctypes import c_double, c_int, byref
 from typing import Dict, List
+from scipy.spatial.distance import pdist
 
+from massbank2db import HCLUST_LIB
 from massbank2db.parser import get_meta_regex, get_AC_regex, get_CH_regex, get_ms_regex
 
 # Setup the Logger
@@ -67,6 +71,15 @@ class MBSpectrum(object):
 
     def get_int(self):
         return self._int
+
+    def get_meta_information(self):
+        return self._meta_information
+
+    def set_mz(self, mz):
+        self._mz = mz
+
+    def set_int(self, ints):
+        self._int = ints
 
     def update_molecule_structure_information_using_pubchem(self, db_conn):
         """
@@ -186,11 +199,155 @@ class MBSpectrum(object):
 
         return mzs, ints
 
+    @staticmethod
+    def merge_spectra(spectra, eppm=5, eabs=0.001, rt_agg_fun=np.min, rt_key="retention_time"):
+        """
+        Combining a list of spectra. Their peaks are merged into a single spectrum using hierarchical clustering. The
+        meta information is merged in the following way:
+
+            - if the meta-information is equal for all spectra, then the output spectrum contains only a single info
+            - if the meta-information is different for the spectra, a list of values is kept
+
+        E.g.:
+
+            spec_1: "inchikey" = "OUSYWCQYMPDAEO-UHFFFAOYSA-N"
+            spec_2: "inchikey" = "OUSYWCQYMPDAEO-UHFFFAOYSA-N" => spec_merged "inchikey" = "OUSYWCQYMPDAEO-UHFFFAOYSA-N"
+            spec_3: "inchikey" = "OUSYWCQYMPDAEO-UHFFFAOYSA-N"
+
+            spec_1: "ce" = 10ev
+            spec_1: "ce" = 20ev => spec_merged "ce" = [10ev, 20ev, 40ev]
+            spec_1: "ce" = 40ev
+
+        If the spectrum contains retention time (RT) information (accessible via the 'rt_key' variable), than the RTs
+        are either aggregated using the 'rt_agg_fun' or simply concatenated if 'rt_agg_fun=None'.
+
+        - TODO: add reference to the clustering algorithm
+
+        :param spectra: list of MBSpectrum objects, MS/MS spectra to merge.
+
+        :param eppm: scalar, relative error in ppm
+
+        :param eabs: scalar, absolute error in Da
+
+        :param rt_agg_fun: function, to aggregate the retention time information, if provided in the meta information of
+            the spectra. The function should take in an iterable or numpy.ndarray and output a scalar
+
+        :param rt_key: string, key to access the retention times in the meta-information of the spectra.
+
+        :return: MBSpectrum, merged spectrum
+        """
+        # Concatenate all spectra
+        mzs = []
+        intensities = []
+        for spectrum in spectra:
+            mzs += spectrum.get_mz()
+
+            # Work with normalized intensities
+            _max_int = np.max(spectrum.get_int())
+            _ints = [_int / _max_int for _int in spectrum.get_int()]
+            intensities += _ints
+
+        mzs = np.array(mzs)
+        intensities = np.array(intensities)
+
+        # Run hierarchical clustering on the spectra peaks and return peak-grouping
+        grouping = mzClust_hclust(mzs, eppm / 1e6, eabs)
+
+        # Aggregate the peak-clusters as described in [1]: mean mass-per-charge and maximum intensities
+        mzs_out = []
+        ints_out = []
+        for peaks in grouping.values():
+            mzs_out.append(np.mean(mzs[peaks]))
+            ints_out.append(np.max(intensities[peaks]))
+        mzs_out = np.array(mzs_out)
+        ints_out = np.array(ints_out)
+
+        # Sort the peaks (mz, int) by their mass-per-charge values
+        _idc_sorted = np.argsort(mzs_out)
+        mzs_out = mzs_out[_idc_sorted].tolist()
+        ints_out = ints_out[_idc_sorted].tolist()
+
+        # Create the merged output spectrum
+        spec_out = MBSpectrum()
+        spec_out.set_mz(mzs_out)
+        spec_out.set_int(ints_out)
+
+        # Set meta information of the output spectrum
+        for info in spectra[0].get_meta_information():
+            _info = []
+            for spectrum in spectra:
+                _info.append(spectrum.get(info))
+
+            if len(set(_info)) == 1 and info != "retention_time":
+                spec_out.set(info, _info[0])
+            else:
+                spec_out.set(info, _info)
+
+        # Merge retention time information
+        if rt_agg_fun is not None and spec_out.get("retention_time"):
+            if not isinstance(spec_out.get("retention_time_unit"), str):
+                raise ValueError("Merging not possible, as retention time units are not equal for all spectra: ",
+                                 spec_out.get("retention_time_unit"))
+
+            spec_out.set("retention_time", rt_agg_fun(spec_out.get("retention_time")))
+
+        return spec_out
+
+
+def mzClust_hclust(mzs, eppm, eabs):
+    N = len(mzs)
+
+    if N < 2:
+        # Empty spectrum or single peak: no grouping needed
+        c_grouping = np.ones(N)
+    else:
+        # Convert Python to C variables
+        c_N = c_int(N)
+        c_mzs = (c_double * N)(*mzs)
+        d = pdist(mzs[:, np.newaxis])
+        c_d = (c_double * len(d))(*d)
+        c_eppm = c_double(eppm)
+        c_eabs = c_double(eabs)
+        g = np.zeros(N, dtype=int)
+        c_grouping = (c_int * N)(*g)
+
+        # Calculate hierarchical peak clustering
+        HCLUST_LIB.R_mzClust_hclust(byref(c_mzs), byref(c_N), byref(c_d), byref(c_grouping), byref(c_eppm),
+                                    byref(c_eabs))
+
+    grouping = {}
+    for i in range(N):
+        try:
+            grouping[c_grouping[i]].append(i)
+        except KeyError:
+            grouping[c_grouping[i]] = [i]
+
+    return grouping
+
+# OLD CODE
+# Apply filter to the each spectrum as described in [1]
+# 1) Keep only spectra, that contain at least one fragment peak _other_ than the precursor
+# _mzs = spectrum.get_mz()
+# if len(_mzs) < 2:
+#     print("skip:", spectrum.get("accession"))
+#     continue
+# if all([_within_error_window_around_peak(float(spectrum.get("precursor_mz")), _mz, eppm, eabs)
+#         for _mz in _mzs]):
+#     print("skip:", spectrum.get("accession"))
+#     continue
+
+# def _within_error_window_around_peak(mz_center, mz, eppm, eabs):
+#     lb = mz_center - mz_center * eppm - eabs
+#     up = mz_center + mz_center * eppm + eabs
+#
+#     if (lb <= mz) and (mz <= up):
+#         return True
+#     else:
+#         return False
+
 
 if __name__ == "__main__":
     msfn = "/run/media/bach/EVO500GB/data/MassBank/Chubu_Univ/UT001973.txt"
 
     # Read all meta information from the MS-file
     spec = MBSpectrum(msfn)
-
-    print("hey")
