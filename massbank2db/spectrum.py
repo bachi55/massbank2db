@@ -103,6 +103,7 @@ class MBSpectrum(object):
 
         # Fetch information from local DB
         # TODO: Update also molecular weight. For that we need to rebuild the local PubChem DB.
+        # TODO: Add the XLogP3 information to the spectrum
         rows = db_conn.execute("SELECT cid, InChI, InChIKey, SMILES_CAN, SMILES_ISO, exact_mass, molecular_formula "
                                "    FROM compounds"
                                "    WHERE %s is ? "
