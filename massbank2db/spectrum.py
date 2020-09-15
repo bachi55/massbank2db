@@ -126,6 +126,31 @@ class MBSpectrum(object):
         return True
 
     def _to_metfrag_format(self, **kwargs):
+        # All supported MetFrag precursor (ion) types: https://ipb-halle.github.io/MetFrag/projects/metfragcl/
+        # TODO: Apply molecular formula simplifications, e.g. CH3COO --> C2H3O2 or CH3OH --> CH4O
+        metfrag_prec_type2mode = {
+            # Positive mode
+            "[M+H]+": (1, True),
+            "[M+NH4]+": (18, True),
+            "[M+Na]+": (23, True),
+            "[M+K]+": (39, True),
+            "[M+CH3OH+H]+": (33, True),
+            "[M+ACN+H]+": (42, True),
+            "[M+ACN+Na]+": (64, True),
+            "[M+2ACN+H]+": (83, True),
+            "[M]+": (0, True),  # intrinsically charged
+            # Negative mode
+            "[M-H]-": (-1, False),
+            "[M+Cl]-": (35, False),
+            "[M+HCOO]-": (45, False),
+            "[M+CH3COO]-": (59, False),
+            "[M]-": (0, False)  # intrinsically charged
+        }
+        try:
+            precursor_ion_mode, is_positive_mode = metfrag_prec_type2mode[self.get("precursor_type")]
+        except KeyError as err:
+            raise ValueError("The ionization mode '%s' is not supported by MetFrag." % err)
+
         _base_fn = self.get("accession")  # TODO: How to handle accession lists resulting from merged spectra?
 
         peak_list_fn = "_".join([_base_fn, "peaks.csv"])
@@ -138,9 +163,45 @@ class MBSpectrum(object):
 
         # TODO: MetFrag configuration
         try:
+            # Sanitize score information: types and weights
+            score_weights = kwargs["MetFragScoreWeights"]  # type: List[int]
+            score_types = kwargs["MetFragScoreTypes"]  # type: List[str]
+
+            if not (isinstance(score_types, list) or isinstance(score_types, np.ndarray)):
+                raise ValueError("Score types must be provided as list or numpy.ndarray.")
+
+            if not (isinstance(score_weights, list) or isinstance(score_weights, np.ndarray)):
+                raise ValueError("Score weights must be provided as list or numpy.ndarray.")
+
+            if len(score_types) != len(score_weights):
+                raise ValueError("Number of score types must be equal the number of score weights. (%d != %d)"
+                                 % (len(score_types), len(score_weights)))
+
+            # Sanitize pre-processing filters
+            pre_processing_filters = kwargs.get("MetFragPreProcessingCandidateFilter",
+                                                ["UnconnectedCompoundFilter", "IsotopeFilter"])
+
+            if not (isinstance(pre_processing_filters, list) or isinstance(pre_processing_filters, np.ndarray)):
+                raise ValueError("Pre-processing filters must be provided as list or numpy.ndarray.")
+
             output[config_fn] = "\n".join([
+                "LocalDatabasePath=%s" % kwargs["LocalDatabasePath"],
+                "MaximumTreeDepth=%d" % kwargs.get("MaximumTreeDepth", 2),
+                "ConsiderHydrogenShifts=%s" % kwargs.get("ConsiderHydrogenShifts", True),
+                "MetFragDatabaseType=%s" % kwargs.get("MetFragDatabaseType", "LocalInChI"),
+                "MetFragScoreWeights=%s" % ",".join(map(str, score_weights)),
+                "MetFragPreProcessingCandidateFilter=%s" % ",".join(pre_processing_filters),
+                "MetFragScoreTypes=%s" % ",".join(score_types),
+                "MetFragCandidateWriter=%s" % kwargs.get("MetFragCandidateWriter", "CSV"),
+                "FragmentPeakMatchAbsoluteMassDeviation=%f" % kwargs.get("FragmentPeakMatchAbsoluteMassDeviation", 0.001),
+                "FragmentPeakMatchRelativeMassDeviation=%f" % kwargs.get("FragmentPeakMatchRelativeMassDeviation", 5),
+                "ResultsPath=%s" % kwargs["ResultsPath"],
+                "NumberThreads=%d" % kwargs["NumberThreads"],
+                "PrecursorIonMode=%d" % precursor_ion_mode,
+                "IsPositiveIonMode=%s" % is_positive_mode,
+                "NeutralPrecursorMass=%f" % self.get("exact_mass"),
+                "SampleName=%s" % _base_fn
                 "PeakListPath=%s" % kwargs["PeakListPath"],
-                ""
             ])
         except KeyError as err:
             # TODO: Should we log this event / error?
