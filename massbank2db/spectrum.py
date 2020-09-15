@@ -200,9 +200,28 @@ class MBSpectrum(object):
         return mzs, ints
 
     @staticmethod
-    def merge_spectra(spectra, eppm=5, eabs=0.001, rt_agg=np.min):
+    def merge_spectra(spectra, eppm=5, eabs=0.001, rt_agg_fun=np.min, rt_key="retention_time"):
         """
+        Combining a list of spectra. Their peaks are merged into a single spectrum using hierarchical clustering. The
+        meta information is merged in the following way:
 
+            - if the meta-information is equal for all spectra, then the output spectrum contains only a single info
+            - if the meta-information is different for the spectra, a list of values is kept
+
+        E.g.:
+
+            spec_1: "inchikey" = "OUSYWCQYMPDAEO-UHFFFAOYSA-N"
+            spec_2: "inchikey" = "OUSYWCQYMPDAEO-UHFFFAOYSA-N" => spec_merged "inchikey" = "OUSYWCQYMPDAEO-UHFFFAOYSA-N"
+            spec_3: "inchikey" = "OUSYWCQYMPDAEO-UHFFFAOYSA-N"
+
+            spec_1: "ce" = 10ev
+            spec_1: "ce" = 20ev => spec_merged "ce" = [10ev, 20ev, 40ev]
+            spec_1: "ce" = 40ev
+
+        If the spectrum contains retention time (RT) information (accessible via the 'rt_key' variable), than the RTs
+        are either aggregated using the 'rt_agg_fun' or simply concatenated if 'rt_agg_fun=None'.
+
+        - TODO: add reference to the clustering algorithm
 
         :param spectra: list of MBSpectrum objects, MS/MS spectra to merge.
 
@@ -210,15 +229,13 @@ class MBSpectrum(object):
 
         :param eabs: scalar, absolute error in Da
 
-        :param rt_agg: function, to aggregate the retention time information, if provided in the meta information of the
-            spectra. The function should take in an iterable or numpy.ndarray and output a scalar
+        :param rt_agg_fun: function, to aggregate the retention time information, if provided in the meta information of
+            the spectra. The function should take in an iterable or numpy.ndarray and output a scalar
+
+        :param rt_key: string, key to access the retention times in the meta-information of the spectra.
 
         :return: MBSpectrum, merged spectrum
         """
-        eppm = eppm / 1e6
-
-        # TODO: Apply filter to spectra, e.g. normalize intensities, cut of high mass peaks (> precursor mz)
-
         # Concatenate all spectra
         mzs = []
         intensities = []
@@ -234,7 +251,7 @@ class MBSpectrum(object):
         intensities = np.array(intensities)
 
         # Run hierarchical clustering on the spectra peaks and return peak-grouping
-        grouping = mzClust_hclust(mzs, eppm, eabs)
+        grouping = mzClust_hclust(mzs, eppm / 1e6, eabs)
 
         # Aggregate the peak-clusters as described in [1]: mean mass-per-charge and maximum intensities
         mzs_out = []
@@ -257,22 +274,22 @@ class MBSpectrum(object):
 
         # Set meta information of the output spectrum
         for info in spectra[0].get_meta_information():
-            _info = set()
+            _info = []
             for spectrum in spectra:
-                _info.add(spectrum.get(info))
+                _info.append(spectrum.get(info))
 
-            if len(_info) == 1:
-                spec_out.set(info, _info.pop())
+            if len(set(_info)) == 1 and info != "retention_time":
+                spec_out.set(info, _info[0])
             else:
-                spec_out.set(info, [i for i in _info])
+                spec_out.set(info, _info)
 
         # Merge retention time information
-        if spec_out.get("retention_time"):
+        if rt_agg_fun is not None and spec_out.get("retention_time"):
             if not isinstance(spec_out.get("retention_time_unit"), str):
                 raise ValueError("Merging not possible, as retention time units are not equal for all spectra: ",
                                  spec_out.get("retention_time_unit"))
 
-            spec_out.set("retention_time", rt_agg(spec_out.get("retention_time")))
+            spec_out.set("retention_time", rt_agg_fun(spec_out.get("retention_time")))
 
         return spec_out
 

@@ -31,7 +31,7 @@ import numpy as np
 from massbank2db.spectrum import MBSpectrum
 
 
-class TestMBSpectrum(unittest.TestCase):
+class TestMBSpectrumParsing(unittest.TestCase):
     def test_peak_parsing(self):
         # Spectrum 1
         peaks = [(65.0388, 454422.7),
@@ -63,6 +63,47 @@ class TestMBSpectrum(unittest.TestCase):
             (161.043200, 1399.000000)]
         spec = MBSpectrum("./example_massbank_records/FIO00665.txt")
         self.assertEqual(peaks, spec.get_peak_list_as_tuples())
+
+
+class TestMBSpectrumMergin(unittest.TestCase):
+    def test_metainformation_merging(self):
+        # Load the list of spectra to merge: EA0004[01][0-9].txt --> EAX000401.txt
+        spectra = []
+        acc_ref = []
+        rt_ref = []
+        precmz_ref = []
+        recordtitle_ref = []
+        ce_ref = []
+        for mb_fn in glob.iglob(os.path.join("example_massbank_records", "EA0004[01][0-9].txt")):
+            spectra.append(MBSpectrum(mb_fn))
+
+            # collect some reference meta-information
+            acc_ref.append(os.path.basename(mb_fn).split(".")[0])
+            rt_ref.append(spectra[-1].get("retention_time"))
+            precmz_ref.append(spectra[-1].get("precursor_mz"))
+            recordtitle_ref.append(spectra[-1].get("record_title"))
+            ce_ref.append(spectra[-1].get("collision_energy"))
+
+        # -------------------
+        # WITH RT AGGREGATION
+        # -------------------
+        merged_spectrum = MBSpectrum.merge_spectra(spectra, rt_agg_fun=np.min)  # type: MBSpectrum
+
+        self.assertEqual("OUSYWCQYMPDAEO-UHFFFAOYSA-N", merged_spectrum.get("inchikey"))
+        self.assertEqual(acc_ref, merged_spectrum.get("accession"))
+        self.assertEqual("min", merged_spectrum.get("retention_time_unit"))
+        self.assertEqual(np.min(rt_ref), merged_spectrum.get("retention_time"))
+        self.assertEqual(precmz_ref[0], merged_spectrum.get("precursor_mz"))
+        self.assertEqual(recordtitle_ref, merged_spectrum.get("record_title"))
+        self.assertEqual(ce_ref, merged_spectrum.get("collision_energy"))
+
+        # ----------------------
+        # WITHOUT RT AGGREGATION
+        # ----------------------
+        merged_spectrum = MBSpectrum.merge_spectra(spectra, rt_agg_fun=None)  # type: MBSpectrum
+
+        self.assertEqual("min", merged_spectrum.get("retention_time_unit"))
+        self.assertEqual(rt_ref, merged_spectrum.get("retention_time"))
 
     def test_spectra_merging__EAX000401(self):
         """
