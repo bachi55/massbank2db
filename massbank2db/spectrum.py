@@ -125,6 +125,29 @@ class MBSpectrum(object):
 
         return True
 
+    def _to_metfrag_format(self, **kwargs):
+        _base_fn = self.get("accession")  # TODO: How to handle accession lists resulting from merged spectra?
+
+        peak_list_fn = "_".join([_base_fn, "peaks.csv"])
+        config_fn = "_".join([_base_fn, "config.txt"])
+
+        # Peak list: tab-separated list --> mz\tint\n
+        output = {
+            peak_list_fn: "\n".join(["%f\t%f" % (mz, intensity) for mz, intensity in zip(self._mz, self._int)]),
+        }
+
+        # TODO: MetFrag configuration
+        try:
+            output[config_fn] = "\n".join([
+                "PeakListPath=%s" % kwargs["PeakListPath"],
+                ""
+            ])
+        except KeyError as err:
+            # TODO: Should we log this event / error?
+            raise ValueError("The value of '%s' is not provided and no default is defined." % err)
+
+        return output
+
     @staticmethod
     def _sanitize_meta_information(meta_info_in):
         meta_info_out = {}
