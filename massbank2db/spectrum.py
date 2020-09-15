@@ -278,18 +278,18 @@ class MBSpectrum(object):
             for spectrum in spectra:
                 _info.append(spectrum.get(info))
 
-            if len(set(_info)) == 1 and info != "retention_time":
+            if len(set(_info)) == 1 and info != rt_key:
                 spec_out.set(info, _info[0])
             else:
                 spec_out.set(info, _info)
 
         # Merge retention time information
-        if rt_agg_fun is not None and spec_out.get("retention_time"):
+        if rt_agg_fun is not None and spec_out.get(rt_key):
             if not isinstance(spec_out.get("retention_time_unit"), str):
                 raise ValueError("Merging not possible, as retention time units are not equal for all spectra: ",
                                  spec_out.get("retention_time_unit"))
 
-            spec_out.set("retention_time", rt_agg_fun(spec_out.get("retention_time")))
+            spec_out.set(rt_key, rt_agg_fun(spec_out.get(rt_key)))
 
         return spec_out
 
