@@ -26,10 +26,12 @@
 import re
 import logging
 import numpy as np
+import os
 
 from ctypes import c_double, c_int, byref
 from typing import Dict, List
 from scipy.spatial.distance import pdist
+from hashlib import sha1
 
 from massbank2db import HCLUST_LIB
 from massbank2db.parser import get_meta_regex, get_AC_regex, get_CH_regex, get_ms_regex
@@ -127,23 +129,24 @@ class MBSpectrum(object):
 
     def _to_metfrag_format(self, **kwargs):
         # All supported MetFrag precursor (ion) types: https://ipb-halle.github.io/MetFrag/projects/metfragcl/
-        # TODO: Apply molecular formula simplifications, e.g. CH3COO --> C2H3O2 or CH3OH --> CH4O
+        # Apply molecular formula simplifications, e.g. CH3COO --> C2H3O2 or CH3OH --> CH4O, source for that
+        # https://docs.google.com/spreadsheets/d/1r4dPw1shIEy_W2BkfgPsihinwg-Nah654VlNTn8Gxo0/edit#gid=0
         metfrag_prec_type2mode = {
             # Positive mode
             "[M+H]+": (1, True),
             "[M+NH4]+": (18, True),
             "[M+Na]+": (23, True),
             "[M+K]+": (39, True),
-            "[M+CH3OH+H]+": (33, True),
-            "[M+ACN+H]+": (42, True),
-            "[M+ACN+Na]+": (64, True),
-            "[M+2ACN+H]+": (83, True),
+            "[M+CH3OH+H]+": (33, True), "[M+CH4O+H]+": (33, True),
+            "[M+ACN+H]+": (42, True), "[M+C2H3N+H]+": (42, True),
+            "[M+ACN+Na]+": (64, True), "[M+C2H3N+Na]+": (64, True),
+            "[M+2ACN+H]+": (83, True), "[M+C4H6N2+H]+": (83, True),
             "[M]+": (0, True),  # intrinsically charged
             # Negative mode
             "[M-H]-": (-1, False),
             "[M+Cl]-": (35, False),
-            "[M+HCOO]-": (45, False),
-            "[M+CH3COO]-": (59, False),
+            "[M+HCOO]-": (45, False), "[M+CHO2]-": (45, False),
+            "[M+CH3COO]-": (59, False), "[M+C2H3O2]-": (59, False),
             "[M]-": (0, False)  # intrinsically charged
         }
         try:
@@ -151,7 +154,12 @@ class MBSpectrum(object):
         except KeyError as err:
             raise ValueError("The ionization mode '%s' is not supported by MetFrag." % err)
 
-        _base_fn = self.get("accession")  # TODO: How to handle accession lists resulting from merged spectra?
+        if isinstance(self.get("accession"), list):
+            ds = re.compile("[A-Z]+").match(self.get("accession")[0])[0]
+            _base_fn = ds + sha1("".join(self.get("accession")).encode('utf-8')).hexdigest()[:(8 - len(ds))]
+            # e.g. AU3a1fd8
+        else:
+            _base_fn = self.get("accession")
 
         peak_list_fn = "_".join([_base_fn, "peaks.csv"])
         config_fn = "_".join([_base_fn, "config.txt"])
@@ -199,9 +207,9 @@ class MBSpectrum(object):
                 "NumberThreads=%d" % kwargs["NumberThreads"],
                 "PrecursorIonMode=%d" % precursor_ion_mode,
                 "IsPositiveIonMode=%s" % is_positive_mode,
-                "NeutralPrecursorMass=%f" % self.get("exact_mass"),
-                "SampleName=%s" % _base_fn
-                "PeakListPath=%s" % kwargs["PeakListPath"],
+                "NeutralPrecursorMass=%s" % self.get("exact_mass"),
+                "SampleName=%s" % _base_fn,
+                "PeakListPath=%s" % os.path.join(kwargs["PeakListPath"], peak_list_fn),
             ])
         except KeyError as err:
             # TODO: Should we log this event / error?

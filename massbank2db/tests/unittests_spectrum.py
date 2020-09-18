@@ -28,6 +28,8 @@ import glob
 import os
 import numpy as np
 
+from hashlib import sha1
+
 from massbank2db.spectrum import MBSpectrum
 
 
@@ -65,7 +67,74 @@ class TestMBSpectrumParsing(unittest.TestCase):
         self.assertEqual(peaks, spec.get_peak_list_as_tuples())
 
 
-class TestMBSpectrumMergin(unittest.TestCase):
+class TestMBSpectrumToToolFormat(unittest.TestCase):
+    def test_to_metfrag(self):
+        # Spectrum 1 --------------------
+        out = MBSpectrum("./example_massbank_records/FIO00665.txt")._to_metfrag_format(
+            **{"MetFragScoreWeights": [0.8, 0.2],
+               "MetFragScoreTypes": ["FragmenterScore", "PubChemNumberPatents"],
+               "LocalDatabasePath": "/path/to/db",
+               "ResultsPath": "/path/to/results",
+               "NumberThreads": 4,
+               "PeakListPath": "/path/to/peaks"}
+        )
+
+        self.assertIn("FIO00665_peaks.csv", out)
+        self.assertIn("FIO00665_config.txt", out)
+        self.assertIn("PeakListPath=/path/to/peaks/FIO00665_peaks.csv", out["FIO00665_config.txt"])
+        self.assertIn("MetFragScoreWeights=0.8,0.2\n", out["FIO00665_config.txt"])
+        self.assertIn("MetFragScoreTypes=FragmenterScore,PubChemNumberPatents\n", out["FIO00665_config.txt"])
+        self.assertIn("PrecursorIonMode=-1\n", out["FIO00665_config.txt"])
+        self.assertIn("IsPositiveIonMode=False\n", out["FIO00665_config.txt"])
+
+        # Spectrum 2 --------------------
+        out = MBSpectrum("./example_massbank_records/EQ308406.txt")._to_metfrag_format(
+            **{"MetFragScoreWeights": [1.0],
+               "MetFragScoreTypes": ["FragmenterScore"],
+               "LocalDatabasePath": "/path/to/db",
+               "ResultsPath": "/path/to/results",
+               "NumberThreads": 4,
+               "PeakListPath": "/path/to/peaks"}
+        )
+
+        self.assertIn("EQ308406_peaks.csv", out)
+        self.assertIn("EQ308406_config.txt", out)
+        self.assertIn("PeakListPath=/path/to/peaks/EQ308406_peaks.csv", out["EQ308406_config.txt"])
+        self.assertIn("MetFragScoreWeights=1.0\n", out["EQ308406_config.txt"])
+        self.assertIn("MetFragScoreTypes=FragmenterScore\n", out["EQ308406_config.txt"])
+        self.assertIn("PrecursorIonMode=1\n", out["EQ308406_config.txt"])
+        self.assertIn("IsPositiveIonMode=True\n", out["EQ308406_config.txt"])
+
+        # Spectrum 3 --------------------
+        spectra = []
+        acc = []
+        for mb_fn in glob.iglob(os.path.join("example_massbank_records", "EA0004[01][0-9].txt")):
+            spectra.append(MBSpectrum(mb_fn))
+            acc.append(spectra[-1].get("accession"))
+
+        out = MBSpectrum.merge_spectra(spectra)._to_metfrag_format(
+            **{"MetFragScoreWeights": [1.0],
+               "MetFragScoreTypes": ["FragmenterScore"],
+               "LocalDatabasePath": "/path/to/db",
+               "ResultsPath": "/path/to/results",
+               "NumberThreads": 4,
+               "PeakListPath": "/path/to/peaks"}
+        )
+
+        base_fn = "EA" + sha1("".join(acc).encode('utf-8')).hexdigest()[:(8 - len("EA"))]
+        peaks_fn = base_fn + "_peaks.csv"
+        config_fn = base_fn + "_config.txt"
+
+        self.assertIn(peaks_fn, out)
+        self.assertIn(config_fn, out)
+        self.assertIn("PeakListPath=/path/to/peaks/" + peaks_fn, out[config_fn])
+        self.assertIn("MetFragScoreWeights=1.0\n", out[config_fn])
+        self.assertIn("MetFragScoreTypes=FragmenterScore\n", out[config_fn])
+        self.assertIn("PrecursorIonMode=1\n", out[config_fn])
+        self.assertIn("IsPositiveIonMode=True\n", out[config_fn])
+
+
+class TestMBSpectrumMerging(unittest.TestCase):
     def test_metainformation_merging(self):
         # Load the list of spectra to merge: EA0004[01][0-9].txt --> EAX000401.txt
         spectra = []
