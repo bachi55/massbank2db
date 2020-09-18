@@ -537,6 +537,17 @@ class MassbankDB(object):
             yield mol, specs, cands
 
     @staticmethod
+    def _cands_to_metfrag_format(cands):
+        cands_out = cands[["exact_mass", "InChI", "cid", "InChIKey", "molecular_formula"]]
+        cands_out["InChIKey1"] = cands_out["InChIKey"].apply(lambda _r: _r.split("-")[0])
+        cands_out["InChIKey2"] = cands_out["InChIKey"].apply(lambda _r: _r.split("-")[1])
+        cands_out = cands_out.rename({"cid": "Identifier",
+                                      "molecular_formula": "MolecularFormula",
+                                      "exact_mass": "MonoisotopicMass"},
+                                     axis=1)
+        return cands_out.to_csv(sep="|", index=False)
+
+    @staticmethod
     def _get_temporal_database(file_pth=":memory:"):
         conn = sqlite3.connect(file_pth)
         conn.execute("DROP TABLE IF EXISTS information")
