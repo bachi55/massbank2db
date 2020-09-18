@@ -474,12 +474,12 @@ class MassbankDB(object):
             if not return_candidates:
                 cands = None
             elif return_candidates == "mf":
-                cands = self.__pc_conn.execute("SELECT cid, smiles_iso FROM compounds WHERE molecular_formula IS ?",
-                                               (mol[8],)).fetchall()
+                cands = pd.read_sql("SELECT * FROM compounds WHERE molecular_formula IS '%s'" % mol[8],
+                                    con=self.__pc_conn)
             elif return_candidates == "mz":
                 min_exact_mass, max_exact_mass = self._get_ppm_window(mol[7], ppm)
-                cands = self.__pc_conn.execute("SELECT cid, smiles_iso FROM compounds WHERE exact_mass BETWEEN ? AND ?",
-                                               (min_exact_mass, max_exact_mass)).fetchall()
+                cands = pd.read_sql("SELECT cid, smiles_iso FROM compounds WHERE exact_mass BETWEEN %f AND %f" %
+                                    (min_exact_mass, max_exact_mass), con=self.__pc_conn)
             else:
                 raise ValueError("Invalid")
 
