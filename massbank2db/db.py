@@ -539,8 +539,8 @@ class MassbankDB(object):
     @staticmethod
     def _cands_to_metfrag_format(cands):
         cands_out = cands[["exact_mass", "InChI", "cid", "InChIKey", "molecular_formula"]]
-        cands_out["InChIKey1"] = cands_out["InChIKey"].apply(lambda _r: _r.split("-")[0])
-        cands_out["InChIKey2"] = cands_out["InChIKey"].apply(lambda _r: _r.split("-")[1])
+        cands_out.assign(InChIKey1=cands_out["InChIKey"].apply(lambda _r: _r.split("-")[0]))
+        cands_out.assign(InChIKey2=cands_out["InChIKey"].apply(lambda _r: _r.split("-")[1]))
         cands_out = cands_out.rename({"cid": "Identifier",
                                       "molecular_formula": "MolecularFormula",
                                       "exact_mass": "MonoisotopicMass"},

@@ -28,7 +28,7 @@ import glob
 import os
 import numpy as np
 
-from hashlib import sha1
+from zlib import crc32
 
 from massbank2db.spectrum import MBSpectrum
 
@@ -112,7 +112,8 @@ class TestMBSpectrumToToolFormat(unittest.TestCase):
             spectra.append(MBSpectrum(mb_fn))
             acc.append(spectra[-1].get("accession"))
 
-        out = MBSpectrum.merge_spectra(spectra)._to_metfrag_format(
+        merged_spectrum = MBSpectrum.merge_spectra(spectra)
+        out = merged_spectrum._to_metfrag_format(
             **{"MetFragScoreWeights": [1.0],
                "MetFragScoreTypes": ["FragmenterScore"],
                "LocalDatabasePath": "/path/to/db",
@@ -121,12 +122,9 @@ class TestMBSpectrumToToolFormat(unittest.TestCase):
                "PeakListPath": "/path/to/peaks"}
         )
 
-        base_fn = "EA" + sha1("".join(acc).encode('utf-8')).hexdigest()[:(8 - len("EA"))]
-        peaks_fn = base_fn + "_peaks.csv"
-        config_fn = base_fn + "_config.txt"
+        peaks_fn = merged_spectrum.get("accession") + "_peaks.csv"
+        config_fn = merged_spectrum.get("accession") + "_config.txt"
 
-        self.assertIn(peaks_fn, out)
-        self.assertIn(config_fn, out)
         self.assertIn("PeakListPath=/path/to/peaks/" + peaks_fn, out[config_fn])
         self.assertIn("MetFragScoreWeights=1.0\n", out[config_fn])
         self.assertIn("MetFragScoreTypes=FragmenterScore\n", out[config_fn])
@@ -135,7 +133,34 @@ class TestMBSpectrumToToolFormat(unittest.TestCase):
 
 
 class TestMBSpectrumMerging(unittest.TestCase):
-    def test_metainformation_merging(self):
+    def test_metainformation_merging__FIO00665(self):
+        # Apply merge function to a single spectrum
+        mb_fn = os.path.join("example_massbank_records", "FIO00665.txt")
+        spec = MBSpectrum(mb_fn)
+        spectra = [spec]
+        acc_ref = [os.path.basename(mb_fn).split(".")[0]]
+        rt_ref = [spec.get("retention_time")]
+        precmz_ref = [spec.get("precursor_mz")]
+        recordtitle_ref = [spec.get("record_title")]
+        ce_ref = [spec.get("collision_energy")]
+
+        # -------------------
+        # WITH RT AGGREGATION
+        # -------------------
+        merged_spectrum = MBSpectrum.merge_spectra(spectra, rt_agg_fun=np.min)  # type: MBSpectrum
+
+        self.assertEqual("FBZONXHGGPHHIY-UHFFFAOYSA-N", merged_spectrum.get("inchikey"))
+        self.assertEqual(acc_ref, merged_spectrum.get("original_accessions"))
+        self.assertEqual("FIO", merged_spectrum.get("accession")[:3])
+        self.assertEqual(MBSpectrum._get_new_accession_id(merged_spectrum.get("original_accessions")),
+                         merged_spectrum.get("accession"))
+        self.assertEqual(None, merged_spectrum.get("retention_time_unit"))
+        self.assertEqual(None, merged_spectrum.get("retention_time"))
+        self.assertEqual(precmz_ref[0], merged_spectrum.get("precursor_mz"))
+        self.assertEqual(recordtitle_ref[0], merged_spectrum.get("record_title"))
+        self.assertEqual(ce_ref[0], merged_spectrum.get("collision_energy"))
+
+    def test_metainformation_merging__EAX000401(self):
         # Load the list of spectra to merge: EA0004[01][0-9].txt --> EAX000401.txt
         spectra = []
         acc_ref = []
@@ -159,7 +184,10 @@ class TestMBSpectrumMerging(unittest.TestCase):
         merged_spectrum = MBSpectrum.merge_spectra(spectra, rt_agg_fun=np.min)  # type: MBSpectrum
 
         self.assertEqual("OUSYWCQYMPDAEO-UHFFFAOYSA-N", merged_spectrum.get("inchikey"))
-        self.assertEqual(acc_ref, merged_spectrum.get("accession"))
+        self.assertEqual(acc_ref, merged_spectrum.get("original_accessions"))
+        self.assertEqual("EA", merged_spectrum.get("accession")[:2])
+        self.assertEqual(MBSpectrum._get_new_accession_id(merged_spectrum.get("original_accessions")),
+                         merged_spectrum.get("accession"))
         self.assertEqual("min", merged_spectrum.get("retention_time_unit"))
         self.assertEqual(np.min(rt_ref), merged_spectrum.get("retention_time"))
         self.assertEqual(precmz_ref[0], merged_spectrum.get("precursor_mz"))

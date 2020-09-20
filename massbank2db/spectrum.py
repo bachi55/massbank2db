@@ -32,6 +32,7 @@ from ctypes import c_double, c_int, byref
 from typing import Dict, List
 from scipy.spatial.distance import pdist
 from hashlib import sha1
+from zlib import crc32
 
 from massbank2db import HCLUST_LIB
 from massbank2db.parser import get_meta_regex, get_AC_regex, get_CH_regex, get_ms_regex
@@ -154,15 +155,8 @@ class MBSpectrum(object):
         except KeyError as err:
             raise ValueError("The ionization mode '%s' is not supported by MetFrag." % err)
 
-        if isinstance(self.get("accession"), list):
-            ds = re.compile("[A-Z]+").match(self.get("accession")[0])[0]
-            _base_fn = ds + sha1("".join(self.get("accession")).encode('utf-8')).hexdigest()[:(8 - len(ds))]
-            # e.g. AU3a1fd8
-        else:
-            _base_fn = self.get("accession")
-
-        peak_list_fn = "_".join([_base_fn, "peaks.csv"])
-        config_fn = "_".join([_base_fn, "config.txt"])
+        peak_list_fn = "_".join([self.get("accession"), "peaks.csv"])
+        config_fn = "_".join([self.get("accession"), "config.txt"])
 
         # Peak list: tab-separated list --> mz\tint\n
         output = {
@@ -208,7 +202,7 @@ class MBSpectrum(object):
                 "PrecursorIonMode=%d" % precursor_ion_mode,
                 "IsPositiveIonMode=%s" % is_positive_mode,
                 "NeutralPrecursorMass=%s" % self.get("exact_mass"),
-                "SampleName=%s" % _base_fn,
+                "SampleName=%s" % self.get("accession"),
                 "PeakListPath=%s" % os.path.join(kwargs["PeakListPath"], peak_list_fn),
             ])
         except KeyError as err:
@@ -293,7 +287,7 @@ class MBSpectrum(object):
         return mzs, ints
 
     @staticmethod
-    def merge_spectra(spectra, eppm=5, eabs=0.001, rt_agg_fun=np.min, rt_key="retention_time"):
+    def merge_spectra(spectra, eppm=5, eabs=0.001, rt_agg_fun=np.min):
         """
         Combining a list of spectra. Their peaks are merged into a single spectrum using hierarchical clustering. The
         meta information is merged in the following way:
@@ -324,8 +318,6 @@ class MBSpectrum(object):
 
         :param rt_agg_fun: function, to aggregate the retention time information, if provided in the meta information of
             the spectra. The function should take in an iterable or numpy.ndarray and output a scalar
-
-        :param rt_key: string, key to access the retention times in the meta-information of the spectra.
 
         :return: MBSpectrum, merged spectrum
         """
@@ -371,20 +363,43 @@ class MBSpectrum(object):
             for spectrum in spectra:
                 _info.append(spectrum.get(info))
 
-            if len(set(_info)) == 1 and info != rt_key:
+            if len(set(_info)) == 1 and info != "retention_time" and info != "accession":
                 spec_out.set(info, _info[0])
             else:
                 spec_out.set(info, _info)
 
         # Merge retention time information
-        if rt_agg_fun is not None and spec_out.get(rt_key):
+        if rt_agg_fun is not None and spec_out.get("retention_time"):
             if not isinstance(spec_out.get("retention_time_unit"), str):
                 raise ValueError("Merging not possible, as retention time units are not equal for all spectra: ",
                                  spec_out.get("retention_time_unit"))
 
-            spec_out.set(rt_key, rt_agg_fun(spec_out.get(rt_key)))
+            spec_out.set("retention_time", rt_agg_fun(spec_out.get("retention_time")))
+
+        # Create new accession ID from the accession IDs of the individual merged spectra
+        spec_out.set("original_accessions", spec_out.get("accession"))
+        spec_out.set("accession", MBSpectrum._get_new_accession_id(spec_out.get("accession")))
 
         return spec_out
+
+    @staticmethod
+    def _get_new_accession_id(accs):
+        # Extract the accession prefix, e.g. AU203981 -> AU or FEL02392 -> FEL
+        regex = re.compile("[A-Z]+")
+        pref = [regex.match(acc)[0] for acc in accs]
+        assert all([_pref == pref[0] for _pref in pref]), "All accession prefixes are assumed to be equal."
+        pref = pref[0]
+
+        # Get CRC32 hash value based on all accession ids
+        hash_int = crc32("".join(accs).encode('utf-8'))
+
+        # Ensure accession id length (8 characters)
+        len_pref = len(pref)
+        len_hash = 8 - len_pref
+        hash_str = "%06d" % (hash_int % (10 ** len_hash - 1))
+
+        # Combine the accession predix with the hash sting
+        return pref + hash_str
 
 
 def mzClust_hclust(mzs, eppm, eabs):
