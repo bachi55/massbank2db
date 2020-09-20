@@ -32,9 +32,7 @@ import logging
 import pandas as pd
 import numpy as np
 
-from hashlib import sha1
-
-from massbank2db.spectrum import MBSpectrum
+import massbank2db.spectrum
 
 # Setup the Logger
 LOGGER = logging.getLogger(__name__)
@@ -264,7 +262,7 @@ class MassbankDB(object):
         with filter_db_conn:
             for msfn in glob.iglob(os.path.join(base_path, contributor, accession_prefix + "[0-9]*.txt")):
                 acc = os.path.basename(msfn).split(".")[0]
-                specs[acc] = MBSpectrum(msfn)
+                specs[acc] = massbank2db.spectrum.MBSpectrum(msfn)
                 assert specs[acc].get("accession") == acc
 
                 if specs[acc].get("inchikey") is None:
@@ -333,7 +331,7 @@ class MassbankDB(object):
 
             acc_pref_idx += 1
 
-    def insert_spectrum(self, dataset_identifier: str, contributor: str, spectrum: MBSpectrum):
+    def insert_spectrum(self, dataset_identifier: str, contributor: str, spectrum):
         """
 
         :param spectrum:
@@ -474,12 +472,12 @@ class MassbankDB(object):
             if not return_candidates:
                 cands = None
             elif return_candidates == "mf":
-                cands = self.__pc_conn.execute("SELECT cid, smiles_iso FROM compounds WHERE molecular_formula IS ?",
-                                               (mol[8],)).fetchall()
+                cands = pd.read_sql("SELECT * FROM compounds WHERE molecular_formula IS '%s'" % mol[8],
+                                    con=self.__pc_conn)
             elif return_candidates == "mz":
                 min_exact_mass, max_exact_mass = self._get_ppm_window(mol[7], ppm)
-                cands = self.__pc_conn.execute("SELECT cid, smiles_iso FROM compounds WHERE exact_mass BETWEEN ? AND ?",
-                                               (min_exact_mass, max_exact_mass)).fetchall()
+                cands = pd.read_sql("SELECT cid, smiles_iso FROM compounds WHERE exact_mass BETWEEN %f AND %f" %
+                                    (min_exact_mass, max_exact_mass), con=self.__pc_conn)
             else:
                 raise ValueError("Invalid")
 
@@ -487,7 +485,7 @@ class MassbankDB(object):
             # Create a Spectrum object for all spectra in the group
             # -----------------------------------------------------
             for acc, ce, ms_type in zip(row[0].split(","), row[5].split(","), row[6].split(",")):
-                specs.append(MBSpectrum())
+                specs.append(massbank2db.spectrum.MBSpectrum())
 
                 # --------------------------
                 # Data about the acquisition
@@ -535,6 +533,17 @@ class MassbankDB(object):
                 specs = specs[0]
 
             yield mol, specs, cands
+
+    @staticmethod
+    def _cands_to_metfrag_format(cands):
+        cands_out = cands[["exact_mass", "InChI", "cid", "InChIKey", "molecular_formula"]]
+        cands_out.assign(InChIKey1=cands_out["InChIKey"].apply(lambda _r: _r.split("-")[0]))
+        cands_out.assign(InChIKey2=cands_out["InChIKey"].apply(lambda _r: _r.split("-")[1]))
+        cands_out = cands_out.rename({"cid": "Identifier",
+                                      "molecular_formula": "MolecularFormula",
+                                      "exact_mass": "MonoisotopicMass"},
+                                     axis=1)
+        return cands_out.to_csv(sep="|", index=False)
 
     @staticmethod
     def _get_temporal_database(file_pth=":memory:"):

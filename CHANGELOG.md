@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 0.3.0
+**Feature release**
+- add support to output MetFrag format for spectra and candidates
+
 ## Version 0.2.0
 **Feature release**
 - adressed [#2](https://github.com/bachi55/massbank2db/issues/2): Implement a spectra merging strategy

@@ -65,8 +65,100 @@ class TestMBSpectrumParsing(unittest.TestCase):
         self.assertEqual(peaks, spec.get_peak_list_as_tuples())
 
 
-class TestMBSpectrumMergin(unittest.TestCase):
-    def test_metainformation_merging(self):
+class TestMBSpectrumToToolFormat(unittest.TestCase):
+    def test_to_metfrag(self):
+        # Spectrum 1 --------------------
+        out = MBSpectrum("./example_massbank_records/FIO00665.txt")._to_metfrag_format(
+            **{"MetFragScoreWeights": [0.8, 0.2],
+               "MetFragScoreTypes": ["FragmenterScore", "PubChemNumberPatents"],
+               "LocalDatabasePath": "/path/to/db",
+               "ResultsPath": "/path/to/results",
+               "NumberThreads": 4,
+               "PeakListPath": "/path/to/peaks"}
+        )
+
+        self.assertIn("FIO00665_peaks.csv", out)
+        self.assertIn("FIO00665_config.txt", out)
+        self.assertIn("PeakListPath=/path/to/peaks/FIO00665_peaks.csv", out["FIO00665_config.txt"])
+        self.assertIn("MetFragScoreWeights=0.8,0.2\n", out["FIO00665_config.txt"])
+        self.assertIn("MetFragScoreTypes=FragmenterScore,PubChemNumberPatents\n", out["FIO00665_config.txt"])
+        self.assertIn("PrecursorIonMode=-1\n", out["FIO00665_config.txt"])
+        self.assertIn("IsPositiveIonMode=False\n", out["FIO00665_config.txt"])
+
+        # Spectrum 2 --------------------
+        out = MBSpectrum("./example_massbank_records/EQ308406.txt")._to_metfrag_format(
+            **{"MetFragScoreWeights": [1.0],
+               "MetFragScoreTypes": ["FragmenterScore"],
+               "LocalDatabasePath": "/path/to/db",
+               "ResultsPath": "/path/to/results",
+               "NumberThreads": 4,
+               "PeakListPath": "/path/to/peaks"}
+        )
+
+        self.assertIn("EQ308406_peaks.csv", out)
+        self.assertIn("EQ308406_config.txt", out)
+        self.assertIn("PeakListPath=/path/to/peaks/EQ308406_peaks.csv", out["EQ308406_config.txt"])
+        self.assertIn("MetFragScoreWeights=1.0\n", out["EQ308406_config.txt"])
+        self.assertIn("MetFragScoreTypes=FragmenterScore\n", out["EQ308406_config.txt"])
+        self.assertIn("PrecursorIonMode=1\n", out["EQ308406_config.txt"])
+        self.assertIn("IsPositiveIonMode=True\n", out["EQ308406_config.txt"])
+
+        # Spectrum 3 --------------------
+        spectra = []
+        acc = []
+        for mb_fn in glob.iglob(os.path.join("example_massbank_records", "EA0004[01][0-9].txt")):
+            spectra.append(MBSpectrum(mb_fn))
+            acc.append(spectra[-1].get("accession"))
+
+        merged_spectrum = MBSpectrum.merge_spectra(spectra)
+        out = merged_spectrum._to_metfrag_format(
+            **{"MetFragScoreWeights": [1.0],
+               "MetFragScoreTypes": ["FragmenterScore"],
+               "LocalDatabasePath": "/path/to/db",
+               "ResultsPath": "/path/to/results",
+               "NumberThreads": 4,
+               "PeakListPath": "/path/to/peaks"}
+        )
+
+        peaks_fn = merged_spectrum.get("accession") + "_peaks.csv"
+        config_fn = merged_spectrum.get("accession") + "_config.txt"
+
+        self.assertIn("PeakListPath=/path/to/peaks/" + peaks_fn, out[config_fn])
+        self.assertIn("MetFragScoreWeights=1.0\n", out[config_fn])
+        self.assertIn("MetFragScoreTypes=FragmenterScore\n", out[config_fn])
+        self.assertIn("PrecursorIonMode=1\n", out[config_fn])
+        self.assertIn("IsPositiveIonMode=True\n", out[config_fn])
+
+
+class TestMBSpectrumMerging(unittest.TestCase):
+    def test_metainformation_merging__FIO00665(self):
+        # Apply merge function to a single spectrum
+        mb_fn = os.path.join("example_massbank_records", "FIO00665.txt")
+        spec = MBSpectrum(mb_fn)
+        spectra = [spec]
+        acc_ref = [os.path.basename(mb_fn).split(".")[0]]
+        rt_ref = [spec.get("retention_time")]
+        precmz_ref = [spec.get("precursor_mz")]
+        recordtitle_ref = [spec.get("record_title")]
+        ce_ref = [spec.get("collision_energy")]
+
+        # -------------------
+        # WITH RT AGGREGATION
+        # -------------------
+        merged_spectrum = MBSpectrum.merge_spectra(spectra, rt_agg_fun=np.min)  # type: MBSpectrum
+
+        self.assertEqual("FBZONXHGGPHHIY-UHFFFAOYSA-N", merged_spectrum.get("inchikey"))
+        self.assertEqual(acc_ref, merged_spectrum.get("original_accessions"))
+        self.assertEqual("FIO", merged_spectrum.get("accession")[:3])
+        self.assertEqual(MBSpectrum._get_new_accession_id(merged_spectrum.get("original_accessions")),
+                         merged_spectrum.get("accession"))
+        self.assertEqual(None, merged_spectrum.get("retention_time_unit"))
+        self.assertEqual(None, merged_spectrum.get("retention_time"))
+        self.assertEqual(precmz_ref[0], merged_spectrum.get("precursor_mz"))
+        self.assertEqual(recordtitle_ref[0], merged_spectrum.get("record_title"))
+        self.assertEqual(ce_ref[0], merged_spectrum.get("collision_energy"))
+
+    def test_metainformation_merging__EAX000401(self):
         # Load the list of spectra to merge: EA0004[01][0-9].txt --> EAX000401.txt
         spectra = []
         acc_ref = []
@@ -90,7 +182,10 @@ class TestMBSpectrumMergin(unittest.TestCase):
         merged_spectrum = MBSpectrum.merge_spectra(spectra, rt_agg_fun=np.min)  # type: MBSpectrum
 
         self.assertEqual("OUSYWCQYMPDAEO-UHFFFAOYSA-N", merged_spectrum.get("inchikey"))
-        self.assertEqual(acc_ref, merged_spectrum.get("accession"))
+        self.assertEqual(acc_ref, merged_spectrum.get("original_accessions"))
+        self.assertEqual("EA", merged_spectrum.get("accession")[:2])
+        self.assertEqual(MBSpectrum._get_new_accession_id(merged_spectrum.get("original_accessions")),
+                         merged_spectrum.get("accession"))
         self.assertEqual("min", merged_spectrum.get("retention_time_unit"))
         self.assertEqual(np.min(rt_ref), merged_spectrum.get("retention_time"))
         self.assertEqual(precmz_ref[0], merged_spectrum.get("precursor_mz"))

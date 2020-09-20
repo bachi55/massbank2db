@@ -26,11 +26,14 @@
 import re
 import logging
 import numpy as np
+import os
 
 from ctypes import c_double, c_int, byref
 from typing import Dict, List
 from scipy.spatial.distance import pdist
+from zlib import crc32
 
+import massbank2db.db
 from massbank2db import HCLUST_LIB
 from massbank2db.parser import get_meta_regex, get_AC_regex, get_CH_regex, get_ms_regex
 
@@ -125,6 +128,98 @@ class MBSpectrum(object):
 
         return True
 
+    def _to_metfrag_format(self, cands=None, **kwargs):
+        # All supported MetFrag precursor (ion) types: https://ipb-halle.github.io/MetFrag/projects/metfragcl/
+        # Apply molecular formula simplifications, e.g. CH3COO --> C2H3O2 or CH3OH --> CH4O, source for that
+        # https://docs.google.com/spreadsheets/d/1r4dPw1shIEy_W2BkfgPsihinwg-Nah654VlNTn8Gxo0/edit#gid=0
+        metfrag_prec_type2mode = {
+            # Positive mode
+            "[M+H]+": (1, True),
+            "[M+NH4]+": (18, True),
+            "[M+Na]+": (23, True),
+            "[M+K]+": (39, True),
+            "[M+CH3OH+H]+": (33, True), "[M+CH4O+H]+": (33, True),
+            "[M+ACN+H]+": (42, True), "[M+C2H3N+H]+": (42, True),
+            "[M+ACN+Na]+": (64, True), "[M+C2H3N+Na]+": (64, True),
+            "[M+2ACN+H]+": (83, True), "[M+C4H6N2+H]+": (83, True),
+            "[M]+": (0, True),  # intrinsically charged
+            # Negative mode
+            "[M-H]-": (-1, False),
+            "[M+Cl]-": (35, False),
+            "[M+HCOO]-": (45, False), "[M+CHO2]-": (45, False),
+            "[M+CH3COO]-": (59, False), "[M+C2H3O2]-": (59, False),
+            "[M]-": (0, False)  # intrinsically charged
+        }
+        try:
+            precursor_ion_mode, is_positive_mode = metfrag_prec_type2mode[self.get("precursor_type")]
+        except KeyError as err:
+            raise ValueError("The ionization mode '%s' is not supported by MetFrag." % err)
+
+        peak_list_fn = "_".join([self.get("accession"), "peaks.csv"])
+        config_fn = "_".join([self.get("accession"), "config.txt"])
+
+        # Peak list: tab-separated list --> mz\tint\n
+        output = {
+            peak_list_fn: "\n".join(["%f\t%f" % (mz, intensity) for mz, intensity in zip(self._mz, self._int)]),
+        }
+
+        # Handle candidate set
+        if cands is None:
+            local_database_path = kwargs["LocalDatabasePath"]
+        else:
+            cands_fn = "_".join([self.get("accession"), "cands.csv"])
+            local_database_path = os.path.join(kwargs["LocalDatabasePath"], cands_fn)
+            output[cands_fn] = massbank2db.db._cands_to_metfrag_format(cands)
+
+        # TODO: MetFrag configuration
+        try:
+            # Sanitize score information: types and weights
+            score_weights = kwargs["MetFragScoreWeights"]  # type: List[int]
+            score_types = kwargs["MetFragScoreTypes"]  # type: List[str]
+
+            if not (isinstance(score_types, list) or isinstance(score_types, np.ndarray)):
+                raise ValueError("Score types must be provided as list or numpy.ndarray.")
+
+            if not (isinstance(score_weights, list) or isinstance(score_weights, np.ndarray)):
+                raise ValueError("Score weights must be provided as list or numpy.ndarray.")
+
+            if len(score_types) != len(score_weights):
+                raise ValueError("Number of score types must be equal the number of score weights. (%d != %d)"
+                                 % (len(score_types), len(score_weights)))
+
+            # Sanitize pre-processing filters
+            pre_processing_filters = kwargs.get("MetFragPreProcessingCandidateFilter",
+                                                ["UnconnectedCompoundFilter", "IsotopeFilter"])
+
+            if not (isinstance(pre_processing_filters, list) or isinstance(pre_processing_filters, np.ndarray)):
+                raise ValueError("Pre-processing filters must be provided as list or numpy.ndarray.")
+
+            output[config_fn] = "\n".join([
+                "LocalDatabasePath=%s" % local_database_path,
+                "MaximumTreeDepth=%d" % kwargs.get("MaximumTreeDepth", 2),
+                "ConsiderHydrogenShifts=%s" % kwargs.get("ConsiderHydrogenShifts", True),
+                "MetFragDatabaseType=%s" % kwargs.get("MetFragDatabaseType", "LocalPSV"),
+                "MetFragScoreWeights=%s" % ",".join(map(str, score_weights)),
+                "MetFragPreProcessingCandidateFilter=%s" % ",".join(pre_processing_filters),
+                "MetFragScoreTypes=%s" % ",".join(score_types),
+                "MetFragCandidateWriter=%s" % kwargs.get("MetFragCandidateWriter", "PSV"),
+                "FragmentPeakMatchAbsoluteMassDeviation=%f" % kwargs.get("FragmentPeakMatchAbsoluteMassDeviation", 0.001),
+                "FragmentPeakMatchRelativeMassDeviation=%f" % kwargs.get("FragmentPeakMatchRelativeMassDeviation", 5),
+                "ResultsPath=%s" % kwargs["ResultsPath"],
+                "NumberThreads=%d" % kwargs["NumberThreads"],
+                "PrecursorIonMode=%d" % precursor_ion_mode,
+                "IsPositiveIonMode=%s" % is_positive_mode,
+                "NeutralPrecursorMass=%s" % self.get("exact_mass"),
+                "UseSmiles=%s" % kwargs.get("UseSmiles", False),
+                "SampleName=%s" % self.get("accession"),
+                "PeakListPath=%s" % os.path.join(kwargs["PeakListPath"], peak_list_fn),
+            ])
+        except KeyError as err:
+            # TODO: Should we log this event / error?
+            raise ValueError("The value of '%s' is not provided and no default is defined." % err)
+
+        return output
+
     @staticmethod
     def _sanitize_meta_information(meta_info_in):
         meta_info_out = {}
@@ -201,7 +296,7 @@ class MBSpectrum(object):
         return mzs, ints
 
     @staticmethod
-    def merge_spectra(spectra, eppm=5, eabs=0.001, rt_agg_fun=np.min, rt_key="retention_time"):
+    def merge_spectra(spectra, eppm=5, eabs=0.001, rt_agg_fun=np.min):
         """
         Combining a list of spectra. Their peaks are merged into a single spectrum using hierarchical clustering. The
         meta information is merged in the following way:
@@ -232,8 +327,6 @@ class MBSpectrum(object):
 
         :param rt_agg_fun: function, to aggregate the retention time information, if provided in the meta information of
             the spectra. The function should take in an iterable or numpy.ndarray and output a scalar
-
-        :param rt_key: string, key to access the retention times in the meta-information of the spectra.
 
         :return: MBSpectrum, merged spectrum
         """
@@ -279,20 +372,43 @@ class MBSpectrum(object):
             for spectrum in spectra:
                 _info.append(spectrum.get(info))
 
-            if len(set(_info)) == 1 and info != rt_key:
+            if len(set(_info)) == 1 and info != "retention_time" and info != "accession":
                 spec_out.set(info, _info[0])
             else:
                 spec_out.set(info, _info)
 
         # Merge retention time information
-        if rt_agg_fun is not None and spec_out.get(rt_key):
+        if rt_agg_fun is not None and spec_out.get("retention_time"):
             if not isinstance(spec_out.get("retention_time_unit"), str):
                 raise ValueError("Merging not possible, as retention time units are not equal for all spectra: ",
                                  spec_out.get("retention_time_unit"))
 
-            spec_out.set(rt_key, rt_agg_fun(spec_out.get(rt_key)))
+            spec_out.set("retention_time", rt_agg_fun(spec_out.get("retention_time")))
+
+        # Create new accession ID from the accession IDs of the individual merged spectra
+        spec_out.set("original_accessions", spec_out.get("accession"))
+        spec_out.set("accession", MBSpectrum._get_new_accession_id(spec_out.get("accession")))
 
         return spec_out
+
+    @staticmethod
+    def _get_new_accession_id(accs):
+        # Extract the accession prefix, e.g. AU203981 -> AU or FEL02392 -> FEL
+        regex = re.compile("[A-Z]+")
+        pref = [regex.match(acc)[0] for acc in accs]
+        assert all([_pref == pref[0] for _pref in pref]), "All accession prefixes are assumed to be equal."
+        pref = pref[0]
+
+        # Get CRC32 hash value based on all accession ids
+        hash_int = crc32("".join(accs).encode('utf-8'))
+
+        # Ensure accession id length (8 characters)
+        len_pref = len(pref)
+        len_hash = 8 - len_pref
+        hash_str = "%06d" % (hash_int % (10 ** len_hash - 1))
+
+        # Combine the accession predix with the hash sting
+        return pref + hash_str
 
 
 def mzClust_hclust(mzs, eppm, eabs):
