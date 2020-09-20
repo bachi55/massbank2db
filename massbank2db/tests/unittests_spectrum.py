@@ -28,8 +28,6 @@ import glob
 import os
 import numpy as np
 
-from zlib import crc32
-
 from massbank2db.spectrum import MBSpectrum
 
 

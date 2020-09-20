@@ -31,9 +31,9 @@ import os
 from ctypes import c_double, c_int, byref
 from typing import Dict, List
 from scipy.spatial.distance import pdist
-from hashlib import sha1
 from zlib import crc32
 
+import massbank2db.db
 from massbank2db import HCLUST_LIB
 from massbank2db.parser import get_meta_regex, get_AC_regex, get_CH_regex, get_ms_regex
 
@@ -128,7 +128,7 @@ class MBSpectrum(object):
 
         return True
 
-    def _to_metfrag_format(self, **kwargs):
+    def _to_metfrag_format(self, cands=None, **kwargs):
         # All supported MetFrag precursor (ion) types: https://ipb-halle.github.io/MetFrag/projects/metfragcl/
         # Apply molecular formula simplifications, e.g. CH3COO --> C2H3O2 or CH3OH --> CH4O, source for that
         # https://docs.google.com/spreadsheets/d/1r4dPw1shIEy_W2BkfgPsihinwg-Nah654VlNTn8Gxo0/edit#gid=0
@@ -163,6 +163,14 @@ class MBSpectrum(object):
             peak_list_fn: "\n".join(["%f\t%f" % (mz, intensity) for mz, intensity in zip(self._mz, self._int)]),
         }
 
+        # Handle candidate set
+        if cands is None:
+            local_database_path = kwargs["LocalDatabasePath"]
+        else:
+            cands_fn = "_".join([self.get("accession"), "cands.csv"])
+            local_database_path = os.path.join(kwargs["LocalDatabasePath"], cands_fn)
+            output[cands_fn] = massbank2db.db._cands_to_metfrag_format(cands)
+
         # TODO: MetFrag configuration
         try:
             # Sanitize score information: types and weights
@@ -187,14 +195,14 @@ class MBSpectrum(object):
                 raise ValueError("Pre-processing filters must be provided as list or numpy.ndarray.")
 
             output[config_fn] = "\n".join([
-                "LocalDatabasePath=%s" % kwargs["LocalDatabasePath"],
+                "LocalDatabasePath=%s" % local_database_path,
                 "MaximumTreeDepth=%d" % kwargs.get("MaximumTreeDepth", 2),
                 "ConsiderHydrogenShifts=%s" % kwargs.get("ConsiderHydrogenShifts", True),
-                "MetFragDatabaseType=%s" % kwargs.get("MetFragDatabaseType", "LocalInChI"),
+                "MetFragDatabaseType=%s" % kwargs.get("MetFragDatabaseType", "LocalPSV"),
                 "MetFragScoreWeights=%s" % ",".join(map(str, score_weights)),
                 "MetFragPreProcessingCandidateFilter=%s" % ",".join(pre_processing_filters),
                 "MetFragScoreTypes=%s" % ",".join(score_types),
-                "MetFragCandidateWriter=%s" % kwargs.get("MetFragCandidateWriter", "CSV"),
+                "MetFragCandidateWriter=%s" % kwargs.get("MetFragCandidateWriter", "PSV"),
                 "FragmentPeakMatchAbsoluteMassDeviation=%f" % kwargs.get("FragmentPeakMatchAbsoluteMassDeviation", 0.001),
                 "FragmentPeakMatchRelativeMassDeviation=%f" % kwargs.get("FragmentPeakMatchRelativeMassDeviation", 5),
                 "ResultsPath=%s" % kwargs["ResultsPath"],
@@ -202,6 +210,7 @@ class MBSpectrum(object):
                 "PrecursorIonMode=%d" % precursor_ion_mode,
                 "IsPositiveIonMode=%s" % is_positive_mode,
                 "NeutralPrecursorMass=%s" % self.get("exact_mass"),
+                "UseSmiles=%s" % kwargs.get("UseSmiles", False),
                 "SampleName=%s" % self.get("accession"),
                 "PeakListPath=%s" % os.path.join(kwargs["PeakListPath"], peak_list_fn),
             ])

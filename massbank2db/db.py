@@ -32,9 +32,7 @@ import logging
 import pandas as pd
 import numpy as np
 
-from hashlib import sha1
-
-from massbank2db.spectrum import MBSpectrum
+import massbank2db.spectrum
 
 # Setup the Logger
 LOGGER = logging.getLogger(__name__)
@@ -264,7 +262,7 @@ class MassbankDB(object):
         with filter_db_conn:
             for msfn in glob.iglob(os.path.join(base_path, contributor, accession_prefix + "[0-9]*.txt")):
                 acc = os.path.basename(msfn).split(".")[0]
-                specs[acc] = MBSpectrum(msfn)
+                specs[acc] = massbank2db.spectrum.MBSpectrum(msfn)
                 assert specs[acc].get("accession") == acc
 
                 if specs[acc].get("inchikey") is None:
@@ -333,7 +331,7 @@ class MassbankDB(object):
 
             acc_pref_idx += 1
 
-    def insert_spectrum(self, dataset_identifier: str, contributor: str, spectrum: MBSpectrum):
+    def insert_spectrum(self, dataset_identifier: str, contributor: str, spectrum):
         """
 
         :param spectrum:
@@ -487,7 +485,7 @@ class MassbankDB(object):
             # Create a Spectrum object for all spectra in the group
             # -----------------------------------------------------
             for acc, ce, ms_type in zip(row[0].split(","), row[5].split(","), row[6].split(",")):
-                specs.append(MBSpectrum())
+                specs.append(massbank2db.spectrum.MBSpectrum())
 
                 # --------------------------
                 # Data about the acquisition
