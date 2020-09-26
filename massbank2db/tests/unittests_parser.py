@@ -38,7 +38,7 @@ class TestRegularExpressions(unittest.TestCase):
             ("AC$CHROMATOGRAPHY: RETENTION_TIME 9.367 min  ", ("9.367", "min")),  # Athens_Univ/AU592019.txt
             ("AC$CHROMATOGRAPHY: RETENTION_TIME  478.2 sec", ("478.2", "sec")),  # BS/BS001044.txt:
             ("AC$CHROMATOGRAPHY: RETENTION_TIME 618.594  sec", ("618.594", "sec")),  # OUF00490.txt
-            ("AC$CHROMATOGRAPHY: RETENTION_TIME 618.594  s", None)
+            ("AC$CHROMATOGRAPHY: RETENTION_TIME 618.594  s", ("618.594", "s"))
         ]
 
         for line, ref in rt_str_val:

@@ -449,13 +449,13 @@ class MassbankDB(object):
                                           "       GROUP_CONCAT(ms_type), GROUP_CONCAT(resolution), fragmentation_mode "
                                           "   FROM spectra_meta "
                                           "   WHERE dataset IS ? "
-                                          "   GROUP BY dataset, molecule, precursor_mz, precursor_type,"
-                                          "            fragmentation_mode", (dataset,))
+                                          "   GROUP BY molecule, precursor_mz, precursor_type, fragmentation_mode",
+                                          (dataset, ))
         else:
             rows = self.__mb_conn.execute("SELECT accession, dataset, molecule, precursor_mz, precursor_type, "
                                           "       collision_energy, ms_type, resolution, fragmentation_mode "
                                           "   FROM spectra_meta "
-                                          "   WHERE dataset IS ?", (dataset,))
+                                          "   WHERE dataset IS ?", (dataset, ))
 
         for row in rows:
             specs = []

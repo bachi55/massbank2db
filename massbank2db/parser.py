@@ -158,7 +158,7 @@ def get_AC_regex(compile=True) -> dict:
              'column_name':         ['^AC\$CHROMATOGRAPHY:\s+COLUMN.*NAME\s(.*)$'],
              'flow_gradient':       ['^AC\$CHROMATOGRAPHY:\s+FLOW.*GRADIENT\s(.*)$'],
              'flow_rate':           ['^AC\$CHROMATOGRAPHY:\s+FLOW.*RATE\s(.*)$'],
-             'retention_time':      ['^AC\$CHROMATOGRAPHY:\s+RETENTION.*TIME\s+(\d+[.,]?\d*)\s*($|min|sec)'],
+             'retention_time':      ['^AC\$CHROMATOGRAPHY:\s+RETENTION.*TIME\s+(\d+[.,]?\d*)\s*($|min|sec|s|m)'],
              'solvent_A':           ['^AC\$CHROMATOGRAPHY:\s+SOLVENT\sA\s(.*)$'],
              'solvent_B':           ['^AC\$CHROMATOGRAPHY:\s+SOLVENT\sB\s(.*)$'],
              'solvent':             ['^AC\$CHROMATOGRAPHY:\s+SOLVENT\s(.*)$'],

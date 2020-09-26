@@ -31,6 +31,25 @@ import numpy as np
 from massbank2db.spectrum import MBSpectrum
 
 
+class TestMBSpectrumInfoSanitizer(unittest.TestCase):
+    def test_rt_sanitizer(self):
+        out = MBSpectrum._sanitize_meta_information({"retention_time": ("430", "")})
+        self.assertEqual(430, out["retention_time"])
+        self.assertEqual("", out["retention_time_unit"])
+
+        out = MBSpectrum._sanitize_meta_information({"retention_time": ("430.3", "min")})
+        self.assertEqual(430.3, out["retention_time"])
+        self.assertEqual("min", out["retention_time_unit"])
+
+        out = MBSpectrum._sanitize_meta_information({"retention_time": ("32", "s")})
+        self.assertEqual(32, out["retention_time"])
+        self.assertEqual("sec", out["retention_time_unit"])
+
+        out = MBSpectrum._sanitize_meta_information({"retention_time": ("32", "m")})
+        self.assertEqual(32, out["retention_time"])
+        self.assertEqual("min", out["retention_time_unit"])
+
+
 class TestMBSpectrumParsing(unittest.TestCase):
     def test_peak_parsing(self):
         # Spectrum 1

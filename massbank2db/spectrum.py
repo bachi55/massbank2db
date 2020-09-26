@@ -202,7 +202,7 @@ class MBSpectrum(object):
                 "MetFragScoreWeights=%s" % ",".join(map(str, score_weights)),
                 "MetFragPreProcessingCandidateFilter=%s" % ",".join(pre_processing_filters),
                 "MetFragScoreTypes=%s" % ",".join(score_types),
-                "MetFragCandidateWriter=%s" % kwargs.get("MetFragCandidateWriter", "PSV"),
+                "MetFragCandidateWriter=%s" % kwargs.get("MetFragCandidateWriter", "CSV"),
                 "FragmentPeakMatchAbsoluteMassDeviation=%f" % kwargs.get("FragmentPeakMatchAbsoluteMassDeviation", 0.001),
                 "FragmentPeakMatchRelativeMassDeviation=%f" % kwargs.get("FragmentPeakMatchRelativeMassDeviation", 5),
                 "ResultsPath=%s" % kwargs["ResultsPath"],
@@ -236,7 +236,15 @@ class MBSpectrum(object):
             else:
                 if k == "retention_time":
                     meta_info_out["retention_time"] = float(v[0])
-                    meta_info_out["retention_time_unit"] = v[1]
+
+                    if v[1] in ["min", "sec", ""]:
+                        meta_info_out["retention_time_unit"] = v[1]
+                    elif v[1] == "s":
+                        meta_info_out["retention_time_unit"] = "sec"
+                    elif v[1] == "m":
+                        meta_info_out["retention_time_unit"] = "min"
+                    else:
+                        raise ValueError("Invalid retention time-unit: '%s'" % v[1])
                 else:
                     raise NotImplemented("Multiple outputs for information '%s'.")
         return meta_info_out
