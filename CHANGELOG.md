@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 0.4.0
+- simplify the MassbankDB class constructor parameters
+- 'insert_dataset' and 'iter_spectra' now have these parameters
+
 ## Version 0.3.0
 **Feature release**
 - add support to output MetFrag format for spectra and candidates
