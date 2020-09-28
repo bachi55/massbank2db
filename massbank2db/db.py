@@ -43,31 +43,11 @@ LOGGER.addHandler(CH)
 
 
 class MassbankDB(object):
-    def __init__(self, mb_dbfn, only_with_rt=True, only_ms2=True, use_pubchem_structure_info=True,
-                 exclude_deprecated=True, min_number_of_unique_compounds_per_dataset=50, pc_dbfn=None):
+    def __init__(self, mb_dbfn):
         """
-        
         :param mb_dbfn:
-        :param only_with_rt:
-        :param only_ms2:
-        :param use_pubchem_structure_info:
-        :param min_number_of_unique_compounds_per_dataset:
-        :param pc_dbfn:
         """
         self.__mb_conn = sqlite3.connect(mb_dbfn)
-
-        # Open a connection to a local PubChemDB if provided
-        if pc_dbfn is not None:
-            self.__pc_conn = sqlite3.connect("file:" + pc_dbfn + "?mode=ro", uri=True)  # open read-only
-        else:
-            self.__pc_conn = None
-
-        # Different filters to exclude entries from the database
-        self.__only_with_rt = only_with_rt
-        self.__only_ms2 = only_ms2
-        self.__use_pubchem_structure_info = use_pubchem_structure_info
-        self.__min_number_of_unique_compounds_per_dataset = min_number_of_unique_compounds_per_dataset
-        self.__exclude_deprecated = exclude_deprecated
 
     def __enter__(self):
         """
@@ -89,10 +69,6 @@ class MassbankDB(object):
         # Close connection to the Massbank database
         self.close()
 
-        # Close connection to the PubChem database
-        if self.__pc_conn:
-            self.__pc_conn.close()
-
     def close(self):
         self.__mb_conn.close()
 
@@ -104,8 +80,7 @@ class MassbankDB(object):
         """
         with self.__mb_conn:
             if reset:
-                for table_name in ["spectra_candidates", "spectra_peaks", "spectra_raw_rts", "spectra_meta", "datasets",
-                                   "molecules"]:
+                for table_name in ["spectra_peaks", "spectra_raw_rts", "spectra_meta", "datasets", "molecules"]:
                     self.__mb_conn.execute("DROP TABLE IF EXISTS %s" % table_name)
 
             # Molecules Table
@@ -196,24 +171,9 @@ class MassbankDB(object):
             )
             self.__mb_conn.execute("CREATE INDEX IF NOT EXISTS spectra_peaks_spectrum_index ON spectra_peaks(spectrum)")
 
-            # Spectra candidate information
-            self.__mb_conn.execute(
-                "CREATE TABLE IF NOT EXISTS spectra_candidates( \
-                    spectrum      VARCHAR NOT NULL, \
-                    candidate     INTEGER NOT NULL, \
-                    mf_gt_equal   INTEGER NOT NULL, \
-                    ppm_diff_gt   FLOAT NOT NULL, \
-                 FOREIGN KEY(spectrum)  REFERENCES spectra_meta(accession)  ON DELETE CASCADE, \
-                 FOREIGN KEY(candidate) REFERENCES molecules(cid)           ON DELETE CASCADE, \
-                 PRIMARY KEY(spectrum, candidate))")
-            self.__mb_conn.execute(
-                "CREATE INDEX IF NOT EXISTS spectra_candidates_spectrum_index ON spectra_candidates(spectrum)")
-            self.__mb_conn.execute(
-                "CREATE INDEX IF NOT EXISTS spectra_candidates_candidate_index ON spectra_candidates(candidate)")
-            self.__mb_conn.execute(
-                "CREATE INDEX IF NOT EXISTS spectra_candidates_ppm_diff_index ON spectra_candidates(ppm_diff_gt)")
-
-    def insert_dataset(self, accession_prefix, contributor, base_path):
+    def insert_dataset(self, accession_prefix, contributor, base_path, only_with_rt=True, only_ms2=True,
+                       use_pubchem_structure_info=True, pc_dbfn=None, min_number_of_unique_compounds_per_dataset=50,
+                       exclude_deprecated=True):
         """
         Insert all accession of the specified contributor with specified prefix to the database. Each contributor and
         each corresponding accession prefix represents a separate dataset. Furthermore, different chromatographic (LC)
@@ -228,11 +188,6 @@ class MassbankDB(object):
                 -> ...
 
         The LC configuration, MS ionization mode and MS instrument is stored as meta data in the dataset table.
-
-        :param accession_prefix:
-        :param contributor:
-        :param base_path:
-        :return:
         """
         def _add_spec_to_filter_db(spec):
             # Specify the solvent information
@@ -269,7 +224,7 @@ class MassbankDB(object):
                     LOGGER.info("(%s) No compound structure information, i.e. no InChIKey." % acc)
                     continue
 
-                if specs[acc].get("deprecated") is not None:
+                if exclude_deprecated and specs[acc].get("deprecated") is not None:
                     LOGGER.info("(%s) Deprecated entry: '%s'" % (acc, specs[acc].get("deprecated")))
                     continue
 
@@ -279,11 +234,11 @@ class MassbankDB(object):
         # Group the accessions:
         # =====================
         _stmt = ["SELECT COUNT(DISTINCT inchikey), GROUP_CONCAT(accession) FROM information"]
-        if self.__only_with_rt and self.__only_ms2:
+        if only_with_rt and only_ms2:
             _stmt.append("WHERE retention_time IS NOT NULL AND ms_level IS 'MS2'")
-        elif self.__only_with_rt:
+        elif only_with_rt:
             _stmt.append("WHERE retention_time IS NOT NULL")
-        elif self.__only_ms2:
+        elif only_ms2:
             _stmt.append("WHERE ms_level IS 'MS2'")
         _stmt.append("GROUP BY ion_mode, instrument, instrument_type, column_name, column_temperature, flow_gradient, "
                      "  flow_rate, solvent_A, solvent_B")
@@ -295,7 +250,7 @@ class MassbankDB(object):
         # ============================================
         acc_pref_idx = 0
         for row in cur:
-            if row[0] < self.__min_number_of_unique_compounds_per_dataset:
+            if row[0] < min_number_of_unique_compounds_per_dataset:
                 continue
 
             dataset_identifier = "%s_%03d" % (accession_prefix, acc_pref_idx)
@@ -304,8 +259,8 @@ class MassbankDB(object):
                 # -----------------------------------------------------------------------------
                 # Update the molecule structure information in the spectrum file using PubChem:
                 # -----------------------------------------------------------------------------
-                if self.__use_pubchem_structure_info and \
-                        not specs[acc].update_molecule_structure_information_using_pubchem(self.__pc_conn):
+                if use_pubchem_structure_info and \
+                        not specs[acc].update_molecule_structure_information_using_pubchem(pc_dbfn):
                     continue
 
                 # -----------------------------------
@@ -439,10 +394,7 @@ class MassbankDB(object):
                                     spectrum.get("retention_time_unit")
                                    ))
 
-    def iter_spectra(self, dataset, grouped=True, return_candidates=False, ppm=5):
-        if return_candidates and not self.__pc_conn:
-            raise ValueError("No local PubChem DB. Candidates cannot be queried.")
-
+    def iter_spectra(self, dataset, grouped=True, return_candidates=False, ppm=5, pc_dbfn=None):
         if grouped:
             rows = self.__mb_conn.execute("SELECT GROUP_CONCAT(accession), dataset, molecule, precursor_mz,"
                                           "       precursor_type, GROUP_CONCAT(collision_energy),"
@@ -457,6 +409,15 @@ class MassbankDB(object):
                                           "   FROM spectra_meta "
                                           "   WHERE dataset IS ?", (dataset, ))
 
+        # Open a connection to a local PubChemDB if needed and provided
+        if return_candidates in ["mf", "mz"]:
+            if pc_dbfn is None:
+                raise ValueError("No local PubChem DB. Candidates cannot be queried.")
+
+            pc_conn = sqlite3.connect("file:" + pc_dbfn + "?mode=ro", uri=True)  # open read-only
+        else:
+            pc_conn = None
+
         for row in rows:
             specs = []
 
@@ -469,15 +430,14 @@ class MassbankDB(object):
             # --------------------------
             # Load candidate information
             # --------------------------
-            if not return_candidates:
-                cands = None
-            elif return_candidates == "mf":
-                cands = pd.read_sql("SELECT * FROM compounds WHERE molecular_formula IS '%s'" % mol[8],
-                                    con=self.__pc_conn)
+            if return_candidates == "mf":
+                cands = pd.read_sql("SELECT * FROM compounds WHERE molecular_formula IS '%s'" % mol[8], con=pc_conn)
             elif return_candidates == "mz":
                 min_exact_mass, max_exact_mass = self._get_ppm_window(mol[7], ppm)
                 cands = pd.read_sql("SELECT cid, smiles_iso FROM compounds WHERE exact_mass BETWEEN %f AND %f" %
-                                    (min_exact_mass, max_exact_mass), con=self.__pc_conn)
+                                    (min_exact_mass, max_exact_mass), con=pc_conn)
+            elif not return_candidates:
+                cands = None
             else:
                 raise ValueError("Invalid")
 
@@ -533,6 +493,9 @@ class MassbankDB(object):
                 specs = specs[0]
 
             yield mol, specs, cands
+
+        if pc_conn:
+            pc_conn.close()
 
     @staticmethod
     def _cands_to_metfrag_format(cands):

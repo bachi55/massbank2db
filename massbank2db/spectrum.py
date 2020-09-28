@@ -27,6 +27,7 @@ import re
 import logging
 import numpy as np
 import os
+import sqlite3
 
 from ctypes import c_double, c_int, byref
 from typing import Dict, List
@@ -84,13 +85,13 @@ class MBSpectrum(object):
     def set_int(self, ints):
         self._int = ints
 
-    def update_molecule_structure_information_using_pubchem(self, db_conn):
+    def update_molecule_structure_information_using_pubchem(self, pc_dbfn):
         """
         Information of the molecular structure are extracted from PubChem. We use the CID (if provided) or the InChIKey
         provided in the Massbank file to find the compound in PubChem. The motivation is, that we have SMILES
         information coming from a single source and therefore being consistent.
 
-        :param db_conn: sqlite.Connection, with a local PubChem DB stored in an SQLite file.
+        :param pc_dbfn: string, path to the local PubChem DB stored in an SQLite file
 
         :return: boolean, indicating whether an update could be performed.
         """
@@ -105,12 +106,17 @@ class MBSpectrum(object):
             return False
 
         # Fetch information from local DB
+        # Open a connection to a local PubChemDB if provided
+        db_conn = sqlite3.connect("file:" + pc_dbfn + "?mode=ro", uri=True)  # open read-only
+
         # TODO: Update also molecular weight. For that we need to rebuild the local PubChem DB.
         # TODO: Add the XLogP3 information to the spectrum
         rows = db_conn.execute("SELECT cid, InChI, InChIKey, SMILES_CAN, SMILES_ISO, exact_mass, molecular_formula "
                                "    FROM compounds"
                                "    WHERE %s is ? "
                                "    ORDER BY cid ASC" % id_type, (id, )).fetchall()
+
+        db_conn.close()
 
         if len(rows) == 0:
             LOGGER.info("({}) Could not find any compound with {}={} in the local PubChem DB."
@@ -169,7 +175,7 @@ class MBSpectrum(object):
         else:
             cands_fn = "_".join([self.get("accession"), "cands.csv"])
             local_database_path = os.path.join(kwargs["LocalDatabasePath"], cands_fn)
-            output[cands_fn] = massbank2db.db._cands_to_metfrag_format(cands)
+            output[cands_fn] = massbank2db.db.MassbankDB._cands_to_metfrag_format(cands)
 
         # TODO: MetFrag configuration
         try:
