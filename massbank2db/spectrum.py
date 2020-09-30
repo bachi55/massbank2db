@@ -161,8 +161,8 @@ class MBSpectrum(object):
         except KeyError as err:
             raise ValueError("The ionization mode '%s' is not supported by MetFrag." % err)
 
-        peak_list_fn = "_".join([self.get("accession"), "peaks.csv"])
-        config_fn = "_".join([self.get("accession"), "config.txt"])
+        peak_list_fn = self.get("accession") + ".peaks"
+        config_fn = self.get("accession") + ".conf"
 
         # Peak list: tab-separated list --> mz\tint\n
         output = {
@@ -173,7 +173,7 @@ class MBSpectrum(object):
         if cands is None:
             local_database_path = kwargs["LocalDatabasePath"]
         else:
-            cands_fn = "_".join([self.get("accession"), "cands.csv"])
+            cands_fn = self.get("accession") + ".cands"
             local_database_path = os.path.join(kwargs["LocalDatabasePath"], cands_fn)
             output[cands_fn] = massbank2db.db.MassbankDB._cands_to_metfrag_format(cands)
 

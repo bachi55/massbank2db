@@ -47,14 +47,14 @@ class MassbankDB(object):
         """
         :param mb_dbfn:
         """
-        self.__mb_conn = sqlite3.connect(mb_dbfn)
+        self._mb_conn = sqlite3.connect(mb_dbfn)
 
     def __enter__(self):
         """
         When entering the context manager
         """
         # Enable Foreign Key Support (see also: https://sqlite.org/foreignkeys.html#fk_enable)
-        self.__mb_conn.execute("PRAGMA foreign_keys = ON")
+        self._mb_conn.execute("PRAGMA foreign_keys = ON")
 
         return self
 
@@ -64,13 +64,19 @@ class MassbankDB(object):
         """
         # Rollback Massbank database in case of an error
         if isinstance(exc_value, Exception):
-            self.__mb_conn.rollback()
+            self._mb_conn.rollback()
 
         # Close connection to the Massbank database
         self.close()
 
     def close(self):
-        self.__mb_conn.close()
+        self._mb_conn.close()
+
+    def get_datasets_table(self):
+        """
+        Return the datasets table as pandas.DataFrame
+        """
+        return pd.read_sql_query("SELECT * FROM datasets", con=self._mb_conn)
 
     def initialize_tables(self, reset=False):
         """
@@ -78,13 +84,13 @@ class MassbankDB(object):
 
         :param reset: boolean, indicating whether the existing tables should be dropped.
         """
-        with self.__mb_conn:
+        with self._mb_conn:
             if reset:
                 for table_name in ["spectra_peaks", "spectra_raw_rts", "spectra_meta", "datasets", "molecules"]:
-                    self.__mb_conn.execute("DROP TABLE IF EXISTS %s" % table_name)
+                    self._mb_conn.execute("DROP TABLE IF EXISTS %s" % table_name)
 
             # Molecules Table
-            self.__mb_conn.execute(
+            self._mb_conn.execute(
                 "CREATE TABLE IF NOT EXISTS molecules( \
                      cid               INTEGER PRIMARY KEY NOT NULL, \
                      inchi             VARCHAR NOT NULL, \
@@ -95,16 +101,16 @@ class MassbankDB(object):
                      smiles_can        VARCHAR NOT NULL, \
                      exact_mass        FLOAT NOT NULL, \
                      molecular_formula VARCHAR NOT NULL)")
-            self.__mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey_index ON molecules(inchikey)")
-            self.__mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey1_index ON molecules(inchikey1)")
-            self.__mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey2_index ON molecules(inchikey2)")
-            self.__mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_exact_mass_index ON molecules(exact_mass)")
-            self.__mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_mf_index ON molecules(molecular_formula)")
+            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey_index ON molecules(inchikey)")
+            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey1_index ON molecules(inchikey1)")
+            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey2_index ON molecules(inchikey2)")
+            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_exact_mass_index ON molecules(exact_mass)")
+            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_mf_index ON molecules(molecular_formula)")
 
             # Datasets Meta-information table
             #   primary key: Accession prefix + some running id
             #                E.g. AU_001, AU_002
-            self.__mb_conn.execute(
+            self._mb_conn.execute(
                 "CREATE TABLE IF NOT EXISTS datasets( \
                     name                VARCHAR PRIMARY KEY NOT NULL, \
                     contributor         VARCHAR NOT NULL, \
@@ -131,7 +137,7 @@ class MassbankDB(object):
             #   "[...] if the foreign key column in the track table is NULL, then no corresponding entry in the artist
             #   table is required."
             #   Source: https://sqlite.org/foreignkeys.html#fk_basics
-            self.__mb_conn.execute(
+            self._mb_conn.execute(
                 "CREATE TABLE IF NOT EXISTS spectra_meta( \
                     accession           VARCHAR PRIMARY KEY NOT NULL, \
                     dataset             VARCHAR NOT NULL, \
@@ -146,30 +152,30 @@ class MassbankDB(object):
                  FOREIGN KEY(molecule)      REFERENCES molecules(cid),\
                  FOREIGN KEY(dataset)       REFERENCES datasets(name) ON DELETE CASCADE)"
             )
-            self.__mb_conn.execute("CREATE INDEX IF NOT EXISTS spectra_meta_dataset_index ON spectra_meta(dataset)")
+            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS spectra_meta_dataset_index ON spectra_meta(dataset)")
 
             # Spectra Retention Time information table
-            self.__mb_conn.execute(
+            self._mb_conn.execute(
                 "CREATE TABLE IF NOT EXISTS spectra_raw_rts( \
                     spectrum            VARCHAR NOT NULL, \
                     retention_time      FLOAT NOT NULL, \
                     retention_time_unit VARCHAR DEFAULT 'min', \
                  FOREIGN KEY(spectrum) REFERENCES spectra_meta(accession) ON DELETE CASCADE)"
             )
-            self.__mb_conn.execute(
+            self._mb_conn.execute(
                 "CREATE INDEX IF NOT EXISTS spectra_raw_rts_spectrum_index ON spectra_raw_rts(spectrum)")
-            self.__mb_conn.execute(
+            self._mb_conn.execute(
                 "CREATE INDEX IF NOT EXISTS spectra_raw_rts_retention_time_index ON spectra_raw_rts(retention_time)")
 
             # Spectra Peak Information table
-            self.__mb_conn.execute(
+            self._mb_conn.execute(
                 "CREATE TABLE IF NOT EXISTS spectra_peaks( \
                     spectrum  VARCHAR NOT NULL, \
                     mz        FLOAT NOT NULL, \
                     intensity FLOAT NOT NULL, \
                  FOREIGN KEY(spectrum) REFERENCES spectra_meta(accession) ON DELETE CASCADE)"
             )
-            self.__mb_conn.execute("CREATE INDEX IF NOT EXISTS spectra_peaks_spectrum_index ON spectra_peaks(spectrum)")
+            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS spectra_peaks_spectrum_index ON spectra_peaks(spectrum)")
 
     def insert_dataset(self, accession_prefix, contributor, base_path, only_with_rt=True, only_ms2=True,
                        use_pubchem_structure_info=True, pc_dbfn=None, min_number_of_unique_compounds_per_dataset=50,
@@ -267,7 +273,7 @@ class MassbankDB(object):
                 # Insert the spectrum to the database
                 # -----------------------------------
                 try:
-                    with self.__mb_conn:
+                    with self._mb_conn:
                         self.insert_spectrum(dataset_identifier, contributor, specs[acc])
                 except sqlite3.IntegrityError as err:
                     LOGGER.error("({}) SQLite integrity error: {}".format(acc, err))
@@ -276,11 +282,11 @@ class MassbankDB(object):
             # ----------------------------------------------------
             # Determine the number of spectra and unique compounds
             # ----------------------------------------------------
-            with self.__mb_conn:
-                _num_spec, _num_cmp = self.__mb_conn.execute("SELECT COUNT(accession), COUNT(distinct molecule) "
+            with self._mb_conn:
+                _num_spec, _num_cmp = self._mb_conn.execute("SELECT COUNT(accession), COUNT(distinct molecule) "
                                                              "   FROM spectra_meta "
                                                              "   WHERE dataset IS ?", (dataset_identifier,)).fetchall()[0]
-                self.__mb_conn.execute("UPDATE datasets "
+                self._mb_conn.execute("UPDATE datasets "
                                        "   SET num_spectra = ?, num_compounds = ?"
                                        "   WHERE name IS ?", (_num_spec, _num_cmp, dataset_identifier))
 
@@ -295,8 +301,8 @@ class MassbankDB(object):
         # ===========================
         # Insert Molecule Information
         # ===========================
-        self.__mb_conn.execute("INSERT OR IGNORE INTO molecules VALUES (%s)" % self._get_db_value_placeholders(9),
-                               (
+        self._mb_conn.execute("INSERT OR IGNORE INTO molecules VALUES (%s)" % self._get_db_value_placeholders(9),
+                              (
                                    spectrum.get("pubchem_id"),
                                    spectrum.get("inchi"),
                                    spectrum.get("inchikey"),
@@ -325,8 +331,8 @@ class MassbankDB(object):
                     raise RuntimeError("Ups")
         else:
             ion_mode = ion_mode.lower()
-        self.__mb_conn.execute("INSERT OR IGNORE INTO datasets VALUES (%s)" % self._get_db_value_placeholders(18),
-                               (
+        self._mb_conn.execute("INSERT OR IGNORE INTO datasets VALUES (%s)" % self._get_db_value_placeholders(18),
+                              (
                                    dataset_identifier,
                                    contributor,
                                    ion_mode,
@@ -350,8 +356,8 @@ class MassbankDB(object):
         # ===============================
         # Insert Spectra Meta Information
         # ===============================
-        self.__mb_conn.execute("INSERT INTO spectra_meta VALUES (%s)" % self._get_db_value_placeholders(10),
-                               (
+        self._mb_conn.execute("INSERT INTO spectra_meta VALUES (%s)" % self._get_db_value_placeholders(10),
+                              (
                                    spectrum.get("accession"),
                                    dataset_identifier,
                                    spectrum.get("record_title"),
@@ -370,8 +376,8 @@ class MassbankDB(object):
         _mz, _int = spectrum.get_mz(), spectrum.get_int()
         _n_peaks = len(_mz)
         _acc = [spectrum.get("accession")] * _n_peaks
-        self.__mb_conn.executemany("INSERT INTO spectra_peaks VALUES(%s)" % self._get_db_value_placeholders(3),
-                                   zip(_acc, _mz, _int))
+        self._mb_conn.executemany("INSERT INTO spectra_peaks VALUES(%s)" % self._get_db_value_placeholders(3),
+                                  zip(_acc, _mz, _int))
 
         # =====================
         # Insert Retention Time
@@ -381,14 +387,14 @@ class MassbankDB(object):
                 LOGGER.warning("(%s) Retention time unit default (=min) does not look reasonable: rt=%.3f"
                                % (spectrum.get("accession"), spectrum.get("retention_time")))
 
-            self.__mb_conn.execute("INSERT INTO spectra_raw_rts (spectrum, retention_time) VALUES(?, ?)",
-                                   (
+            self._mb_conn.execute("INSERT INTO spectra_raw_rts (spectrum, retention_time) VALUES(?, ?)",
+                                  (
                                     spectrum.get("accession"),
                                     spectrum.get("retention_time"),
                                    ))
         else:
-            self.__mb_conn.execute("INSERT INTO spectra_raw_rts VALUES(?, ?, ?)",
-                                   (
+            self._mb_conn.execute("INSERT INTO spectra_raw_rts VALUES(?, ?, ?)",
+                                  (
                                     spectrum.get("accession"),
                                     spectrum.get("retention_time"),
                                     spectrum.get("retention_time_unit")
@@ -396,18 +402,19 @@ class MassbankDB(object):
 
     def iter_spectra(self, dataset, grouped=True, return_candidates=False, ppm=5, pc_dbfn=None):
         if grouped:
-            rows = self.__mb_conn.execute("SELECT GROUP_CONCAT(accession), dataset, molecule, precursor_mz,"
-                                          "       precursor_type, GROUP_CONCAT(collision_energy),"
-                                          "       GROUP_CONCAT(ms_type), GROUP_CONCAT(resolution), fragmentation_mode "
-                                          "   FROM spectra_meta "
-                                          "   WHERE dataset IS ? "
-                                          "   GROUP BY molecule, precursor_mz, precursor_type, fragmentation_mode",
-                                          (dataset, ))
+            rows = self._mb_conn.execute("SELECT GROUP_CONCAT(accession), dataset, molecule, "
+                                         "       GROUP_CONCAT(precursor_mz), precursor_type, "
+                                         "       GROUP_CONCAT(collision_energy), ms_type, "
+                                         "       GROUP_CONCAT(resolution), fragmentation_mode "
+                                         "    FROM spectra_meta "
+                                         "    WHERE dataset IS ? "
+                                         "    GROUP BY molecule, precursor_type, fragmentation_mode, ms_type",
+                                         (dataset, ))
         else:
-            rows = self.__mb_conn.execute("SELECT accession, dataset, molecule, precursor_mz, precursor_type, "
-                                          "       collision_energy, ms_type, resolution, fragmentation_mode "
-                                          "   FROM spectra_meta "
-                                          "   WHERE dataset IS ?", (dataset, ))
+            rows = self._mb_conn.execute("SELECT accession, dataset, molecule, precursor_mz, precursor_type, "
+                                         "       collision_energy, ms_type, resolution, fragmentation_mode "
+                                         "   FROM spectra_meta "
+                                         "   WHERE dataset IS ?", (dataset, ))
 
         # Open a connection to a local PubChemDB if needed and provided
         if return_candidates in ["mf", "mz"]:
@@ -425,7 +432,7 @@ class MassbankDB(object):
             # Load compound information
             # -------------------------
             # Note: This is equal for all spectra, if grouped, as the compound is a grouping criteria.
-            mol = self.__mb_conn.execute("SELECT * FROM molecules WHERE cid = ?", (row[2],)).fetchall()[0]
+            mol = self._mb_conn.execute("SELECT * FROM molecules WHERE cid = ?", (row[2],)).fetchall()[0]
 
             # --------------------------
             # Load candidate information
@@ -434,7 +441,7 @@ class MassbankDB(object):
                 cands = pd.read_sql("SELECT * FROM compounds WHERE molecular_formula IS '%s'" % mol[8], con=pc_conn)
             elif return_candidates == "mz":
                 min_exact_mass, max_exact_mass = self._get_ppm_window(mol[7], ppm)
-                cands = pd.read_sql("SELECT cid, smiles_iso FROM compounds WHERE exact_mass BETWEEN %f AND %f" %
+                cands = pd.read_sql("SELECT * FROM compounds WHERE exact_mass BETWEEN %f AND %f" %
                                     (min_exact_mass, max_exact_mass), con=pc_conn)
             elif not return_candidates:
                 cands = None
@@ -444,7 +451,7 @@ class MassbankDB(object):
             # -----------------------------------------------------
             # Create a Spectrum object for all spectra in the group
             # -----------------------------------------------------
-            for acc, ce, ms_type in zip(row[0].split(","), row[5].split(","), row[6].split(",")):
+            for acc, ce in zip(row[0].split(","), row[5].split(",")):
                 specs.append(massbank2db.spectrum.MBSpectrum())
 
                 # --------------------------
@@ -455,14 +462,14 @@ class MassbankDB(object):
                 specs[-1].set("precursor_mz", row[3])
                 specs[-1].set("precursor_type", row[4])
                 specs[-1].set("collision_energy", ce)
-                specs[-1].set("ms_type", ms_type)
+                specs[-1].set("ms_type", row[6])
                 specs[-1].set("resolution", row[7])
                 specs[-1].set("fragmentation_mode", row[8])
 
                 # -------------------
                 # Retention time data
                 # -------------------
-                rt, rt_unit = self.__mb_conn.execute("SELECT retention_time, retention_time_unit FROM spectra_raw_rts"
+                rt, rt_unit = self._mb_conn.execute("SELECT retention_time, retention_time_unit FROM spectra_raw_rts"
                                                      "   WHERE spectrum IS ?", (acc, )).fetchall()[0]
                 specs[-1].set("retention_time", rt)
                 specs[-1].set("retention_time_unit", rt_unit)
@@ -482,7 +489,7 @@ class MassbankDB(object):
                 # Spectrum peaks
                 # --------------
                 # TODO: Remove loop here
-                peaks = self.__mb_conn.execute("SELECT mz, intensity FROM spectra_peaks "
+                peaks = self._mb_conn.execute("SELECT mz, intensity FROM spectra_peaks "
                                                "    WHERE spectrum IS ? ORDER BY mz", (acc, ))
                 specs[-1]._mz, specs[-1]._int = [], []
                 for peak in peaks:
@@ -499,12 +506,13 @@ class MassbankDB(object):
 
     @staticmethod
     def _cands_to_metfrag_format(cands):
-        cands_out = cands[["exact_mass", "InChI", "cid", "InChIKey", "molecular_formula"]]
+        cands_out = cands[["exact_mass", "InChI", "cid", "InChIKey", "molecular_formula", "SMILES_ISO"]]
         cands_out.assign(InChIKey1=cands_out["InChIKey"].apply(lambda _r: _r.split("-")[0]))
         cands_out.assign(InChIKey2=cands_out["InChIKey"].apply(lambda _r: _r.split("-")[1]))
         cands_out = cands_out.rename({"cid": "Identifier",
                                       "molecular_formula": "MolecularFormula",
-                                      "exact_mass": "MonoisotopicMass"},
+                                      "exact_mass": "MonoisotopicMass",
+                                      "SMILES_ISO": "SMILES"},
                                      axis=1)
         return cands_out.to_csv(sep="|", index=False)
 

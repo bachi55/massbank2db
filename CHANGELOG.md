@@ -1,5 +1,10 @@
 # Changelog
 
+## Version 0.4.1
+- modify spectra grouping small 
+- small fix to the pubchem information retrieval when iterating the spectra
+- changes in the metfrag output format
+
 ## Version 0.4.0
 - simplify the MassbankDB class constructor parameters
 - 'insert_dataset' and 'iter_spectra' now have these parameters
