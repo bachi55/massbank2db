@@ -207,7 +207,7 @@ class MassbankDB(object):
             new_row = (acc, contributor, accession_prefix, spec.get("instrument_type"), spec.get("instrument"),
                        spec.get("ion_mode"), spec.get("column_name"), spec.get("flow_gradient"), spec.get("flow_rate"),
                        solvent_A, solvent_B, solvent, spec.get("column_temperature"), spec.get("inchikey"),
-                       spec.get("ms_type"), spec.get("retention_time"))
+                       spec.get("ms_type"), spec.get("retention_time"), spec.get("fragmentation_mode"))
 
             filter_db_conn.execute("INSERT INTO information VALUES(%s)" % self._get_db_value_placeholders(len(new_row)),
                                    new_row)
@@ -247,7 +247,7 @@ class MassbankDB(object):
         elif only_ms2:
             _stmt.append("WHERE ms_level IS 'MS2'")
         _stmt.append("GROUP BY ion_mode, instrument, instrument_type, column_name, column_temperature, flow_gradient, "
-                     "  flow_rate, solvent_A, solvent_B")
+                     "  flow_rate, solvent_A, solvent_B, fragmentation_mode")
 
         cur = filter_db_conn.execute(" ".join(_stmt))
 
@@ -284,11 +284,11 @@ class MassbankDB(object):
             # ----------------------------------------------------
             with self._mb_conn:
                 _num_spec, _num_cmp = self._mb_conn.execute("SELECT COUNT(accession), COUNT(distinct molecule) "
-                                                             "   FROM spectra_meta "
-                                                             "   WHERE dataset IS ?", (dataset_identifier,)).fetchall()[0]
+                                                            "   FROM spectra_meta "
+                                                            "   WHERE dataset IS ?", (dataset_identifier,)).fetchall()[0]
                 self._mb_conn.execute("UPDATE datasets "
-                                       "   SET num_spectra = ?, num_compounds = ?"
-                                       "   WHERE name IS ?", (_num_spec, _num_cmp, dataset_identifier))
+                                      "   SET num_spectra = ?, num_compounds = ?"
+                                      "   WHERE name IS ?", (_num_spec, _num_cmp, dataset_identifier))
 
             acc_pref_idx += 1
 
@@ -470,7 +470,7 @@ class MassbankDB(object):
                 # Retention time data
                 # -------------------
                 rt, rt_unit = self._mb_conn.execute("SELECT retention_time, retention_time_unit FROM spectra_raw_rts"
-                                                     "   WHERE spectrum IS ?", (acc, )).fetchall()[0]
+                                                    "   WHERE spectrum IS ?", (acc, )).fetchall()[0]
                 specs[-1].set("retention_time", rt)
                 specs[-1].set("retention_time_unit", rt_unit)
 
@@ -490,7 +490,7 @@ class MassbankDB(object):
                 # --------------
                 # TODO: Remove loop here
                 peaks = self._mb_conn.execute("SELECT mz, intensity FROM spectra_peaks "
-                                               "    WHERE spectrum IS ? ORDER BY mz", (acc, ))
+                                              "    WHERE spectrum IS ? ORDER BY mz", (acc, ))
                 specs[-1]._mz, specs[-1]._int = [], []
                 for peak in peaks:
                     specs[-1]._mz.append(peak[0])
@@ -536,7 +536,8 @@ class MassbankDB(object):
                      "  column_temperature  VARCHAR,"
                      "  inchikey            VARCHAR NOT NULL,"
                      "  ms_level            VARCHAR,"
-                     "  retention_time      FLOAT)")
+                     "  retention_time      FLOAT,"
+                     "  fragmentation_mode  VARCHAR)")
 
         return conn
 
@@ -595,5 +596,5 @@ if __name__ == "__main__":
         print("(%02d/%02d) %s: " % (idx + 1, len(mbds), row["Contributor"]))
         for pref in map(str.strip, row["AccPref"].split(",")):
             print(pref)
-            with MassbankDB(mb_dbfn, pc_dbfn=pc_dbfn) as mbdb:
-                mbdb.insert_dataset(pref, row["Contributor"], massbank_dir)
+            with MassbankDB(mb_dbfn) as mbdb:
+                mbdb.insert_dataset(pref, row["Contributor"], massbank_dir, pc_dbfn=pc_dbfn)

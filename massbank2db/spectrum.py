@@ -419,7 +419,7 @@ class MBSpectrum(object):
         # Ensure accession id length (8 characters)
         len_pref = len(pref)
         len_hash = 8 - len_pref
-        hash_str = "%06d" % (hash_int % (10 ** len_hash - 1))
+        hash_str = ("%%0%dd" % len_hash) % (hash_int % (10 ** len_hash - 1))
 
         # Combine the accession predix with the hash sting
         return pref + hash_str

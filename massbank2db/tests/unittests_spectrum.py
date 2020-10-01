@@ -96,13 +96,13 @@ class TestMBSpectrumToToolFormat(unittest.TestCase):
                "PeakListPath": "/path/to/peaks"}
         )
 
-        self.assertIn("FIO00665_peaks.csv", out)
-        self.assertIn("FIO00665_config.txt", out)
-        self.assertIn("PeakListPath=/path/to/peaks/FIO00665_peaks.csv", out["FIO00665_config.txt"])
-        self.assertIn("MetFragScoreWeights=0.8,0.2\n", out["FIO00665_config.txt"])
-        self.assertIn("MetFragScoreTypes=FragmenterScore,PubChemNumberPatents\n", out["FIO00665_config.txt"])
-        self.assertIn("PrecursorIonMode=-1\n", out["FIO00665_config.txt"])
-        self.assertIn("IsPositiveIonMode=False\n", out["FIO00665_config.txt"])
+        self.assertIn("FIO00665.peaks", out)
+        self.assertIn("FIO00665.conf", out)
+        self.assertIn("PeakListPath=/path/to/peaks/FIO00665.peaks", out["FIO00665.conf"])
+        self.assertIn("MetFragScoreWeights=0.8,0.2\n", out["FIO00665.conf"])
+        self.assertIn("MetFragScoreTypes=FragmenterScore,PubChemNumberPatents\n", out["FIO00665.conf"])
+        self.assertIn("PrecursorIonMode=-1\n", out["FIO00665.conf"])
+        self.assertIn("IsPositiveIonMode=False\n", out["FIO00665.conf"])
 
         # Spectrum 2 --------------------
         out = MBSpectrum("./example_massbank_records/EQ308406.txt")._to_metfrag_format(
@@ -114,13 +114,13 @@ class TestMBSpectrumToToolFormat(unittest.TestCase):
                "PeakListPath": "/path/to/peaks"}
         )
 
-        self.assertIn("EQ308406_peaks.csv", out)
-        self.assertIn("EQ308406_config.txt", out)
-        self.assertIn("PeakListPath=/path/to/peaks/EQ308406_peaks.csv", out["EQ308406_config.txt"])
-        self.assertIn("MetFragScoreWeights=1.0\n", out["EQ308406_config.txt"])
-        self.assertIn("MetFragScoreTypes=FragmenterScore\n", out["EQ308406_config.txt"])
-        self.assertIn("PrecursorIonMode=1\n", out["EQ308406_config.txt"])
-        self.assertIn("IsPositiveIonMode=True\n", out["EQ308406_config.txt"])
+        self.assertIn("EQ308406.peaks", out)
+        self.assertIn("EQ308406.conf", out)
+        self.assertIn("PeakListPath=/path/to/peaks/EQ308406.peaks", out["EQ308406.conf"])
+        self.assertIn("MetFragScoreWeights=1.0\n", out["EQ308406.conf"])
+        self.assertIn("MetFragScoreTypes=FragmenterScore\n", out["EQ308406.conf"])
+        self.assertIn("PrecursorIonMode=1\n", out["EQ308406.conf"])
+        self.assertIn("IsPositiveIonMode=True\n", out["EQ308406.conf"])
 
         # Spectrum 3 --------------------
         spectra = []
@@ -139,8 +139,8 @@ class TestMBSpectrumToToolFormat(unittest.TestCase):
                "PeakListPath": "/path/to/peaks"}
         )
 
-        peaks_fn = merged_spectrum.get("accession") + "_peaks.csv"
-        config_fn = merged_spectrum.get("accession") + "_config.txt"
+        peaks_fn = merged_spectrum.get("accession") + ".peaks"
+        config_fn = merged_spectrum.get("accession") + ".conf"
 
         self.assertIn("PeakListPath=/path/to/peaks/" + peaks_fn, out[config_fn])
         self.assertIn("MetFragScoreWeights=1.0\n", out[config_fn])

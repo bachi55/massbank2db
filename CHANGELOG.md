@@ -1,5 +1,10 @@
 # Changelog
 
+## Version 0.4.2
+- fix bug in new accession id generator: Total length now fixed to 8, also when acc. pref. has length 3.
+- dataset generation now takes the 'fragmentation_mode' into account
+- fix some broken tests
+
 ## Version 0.4.1
 - modify spectra grouping small 
 - small fix to the pubchem information retrieval when iterating the spectra
