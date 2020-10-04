@@ -43,11 +43,14 @@ LOGGER.addHandler(CH)
 
 
 class MassbankDB(object):
-    def __init__(self, mb_dbfn):
+    def __init__(self, mb_dbfn, read_only=False):
         """
         :param mb_dbfn:
         """
-        self._mb_conn = sqlite3.connect(mb_dbfn)
+        if read_only:
+            self._mb_conn = sqlite3.connect("file:" + mb_dbfn + "?mode=ro", uri=True)
+        else:
+            self._mb_conn = sqlite3.connect(mb_dbfn)
 
     def __enter__(self):
         """
