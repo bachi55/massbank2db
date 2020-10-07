@@ -416,9 +416,9 @@ class MBSpectrum(object):
         # Get CRC32 hash value based on all accession ids
         hash_int = crc32("".join(accs).encode('utf-8'))
 
-        # Ensure accession id length (8 characters)
+        # Ensure accession id length (10 characters)
         len_pref = len(pref)
-        len_hash = 8 - len_pref
+        len_hash = 10 - len_pref
         hash_str = ("%%0%dd" % len_hash) % (hash_int % (10 ** len_hash - 1))
 
         # Combine the accession predix with the hash sting
