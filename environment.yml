@@ -1,0 +1,8 @@
+name: massbank2db
+dependencies:
+  - python
+  - numpy
+  - pandas
+  - scipy
+  - pip
+  - jupyterlab
