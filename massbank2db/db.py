@@ -2,7 +2,7 @@
 #
 # The MIT License (MIT)
 #
-# Copyright 2020 Eric Bach <eric.bach@aalto.fi>
+# Copyright 2020, 2021 Eric Bach <eric.bach@aalto.fi>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -33,6 +33,7 @@ import pandas as pd
 import numpy as np
 
 import massbank2db.spectrum
+from massbank2db.utils import get_mass_error_in_ppm
 
 # Setup the Logger
 LOGGER = logging.getLogger(__name__)
@@ -144,16 +145,17 @@ class MassbankDB(object):
             #   Source: https://sqlite.org/foreignkeys.html#fk_basics
             self._mb_conn.execute(
                 "CREATE TABLE IF NOT EXISTS spectra_meta( \
-                    accession           VARCHAR PRIMARY KEY NOT NULL, \
-                    dataset             VARCHAR NOT NULL, \
-                    record_title        VARCHAR NOT NULL, \
-                    molecule            INTEGER NOT NULL, \
-                    precursor_mz        FLOAT NOT NULL, \
-                    precursor_type      FLOAT NOT NULL, \
-                    collision_energy    FLOAT, \
-                    ms_type             VARCHAR NOT NULL, \
-                    resolution          FLOAT, \
-                    fragmentation_mode  VARCHAR, \
+                    accession            VARCHAR PRIMARY KEY NOT NULL, \
+                    dataset              VARCHAR NOT NULL, \
+                    record_title         VARCHAR NOT NULL, \
+                    molecule             INTEGER NOT NULL, \
+                    precursor_mz         FLOAT NOT NULL, \
+                    precursor_type       FLOAT NOT NULL, \
+                    collision_energy     FLOAT, \
+                    ms_type              VARCHAR NOT NULL, \
+                    resolution           FLOAT, \
+                    fragmentation_mode   VARCHAR, \
+                    exact_mass_error_ppm FLOAT, \
                  FOREIGN KEY(molecule)      REFERENCES molecules(cid),\
                  FOREIGN KEY(dataset)       REFERENCES datasets(name) ON DELETE CASCADE)"
             )
@@ -362,7 +364,7 @@ class MassbankDB(object):
         # ===============================
         # Insert Spectra Meta Information
         # ===============================
-        self._mb_conn.execute("INSERT INTO spectra_meta VALUES (%s)" % self._get_db_value_placeholders(10),
+        self._mb_conn.execute("INSERT INTO spectra_meta VALUES (%s)" % self._get_db_value_placeholders(11),
                               (
                                    spectrum.get("accession"),
                                    dataset_identifier,
@@ -373,7 +375,10 @@ class MassbankDB(object):
                                    spectrum.get("collision_energy"),
                                    spectrum.get("ms_type"),
                                    spectrum.get("resolution"),
-                                   spectrum.get("fragmentation_mode")
+                                   spectrum.get("fragmentation_mode"),
+                                   get_mass_error_in_ppm(float(spectrum.get("exact_mass")),
+                                                         float(spectrum.get("precursor_mz")),
+                                                         spectrum.get("precursor_type"))
                                ))
 
         # ====================
