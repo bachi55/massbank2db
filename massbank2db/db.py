@@ -133,6 +133,7 @@ class MassbankDB(object):
                     solvent             VARCHAR, \
                     instrument_type     VARCHAR NOT NULL, \
                     instrument          VARCHAR NOT NULL, \
+                    fragmentation_mode  VARCHAR NOT NULL, \
                     column_dead_time    FLOAT)"
             )
 
@@ -335,7 +336,7 @@ class MassbankDB(object):
                     raise RuntimeError("Ups")
         else:
             ion_mode = ion_mode.lower()
-        self._mb_conn.execute("INSERT OR IGNORE INTO datasets VALUES (%s)" % self._get_db_value_placeholders(18),
+        self._mb_conn.execute("INSERT OR IGNORE INTO datasets VALUES (%s)" % self._get_db_value_placeholders(19),
                               (
                                    dataset_identifier,
                                    contributor,
@@ -354,6 +355,7 @@ class MassbankDB(object):
                                    spectrum.get("solvent"),
                                    spectrum.get("instrument_type"),
                                    spectrum.get("instrument"),
+                                   spectrum.get("fragmentation_mode"),
                                    None  # TODO: the column dead-time needs to be estimated from the data
                                ))
 

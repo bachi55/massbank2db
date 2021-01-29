@@ -52,7 +52,8 @@ def get_meta_regex(compile=True) -> dict:
              'deprecated':   ['^DEPRECATED:\s+(.*)$'],
              'copyright':    ['^COPYRIGHT:\s+(.*)'],
              'origin':       ['^origin(?:=|:)(.*)$'],
-             'record_title': ['^RECORD_TITLE:\s+(.*)$']}
+             'record_title': ['^RECORD_TITLE:\s+(.*)$'],
+             'license':      ['^LICENSE:\s+(.*)$']}
 
     if compile:
         regex = {k: _compile_regex(v) for k, v in regex.items()}
