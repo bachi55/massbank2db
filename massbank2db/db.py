@@ -101,9 +101,10 @@ class MassbankDB(object):
                      inchikey1         VARCHAR NOT NULL, \
                      inchikey2         VARCHAR NOT NULL, \
                      smiles_iso        VARCHAR NOT NULL, \
-                     smiles_can        VARCHAR NOT NULL, \
+                     smiles_can        VARCHAR, \
                      exact_mass        FLOAT NOT NULL, \
                      molecular_formula VARCHAR NOT NULL)")
+            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchi_index ON molecules(inchi)")
             self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey_index ON molecules(inchikey)")
             self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey1_index ON molecules(inchikey1)")
             self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey2_index ON molecules(inchikey2)")
@@ -579,7 +580,7 @@ if __name__ == "__main__":
     LOGGER.setLevel(logging.INFO)
 
     # Load list of datasets provided by MassBank
-    massbank_dir = "/run/media/bach/EVO500GB/data/MassBank"
+    massbank_dir = "/home/bach/Documents/doctoral/data/MassBank-data_bachi55"
     mbds = pd.read_csv(os.path.join(massbank_dir, "List_of_Contributors_Prefixes_and_Projects.md"),
                        sep="|", skiprows=2, header=None) \
         .iloc[:, [1, 4]] \
@@ -600,4 +601,5 @@ if __name__ == "__main__":
         for pref in map(str.strip, row["AccPref"].split(",")):
             print(pref)
             with MassbankDB(mb_dbfn) as mbdb:
-                mbdb.insert_dataset(pref, row["Contributor"], massbank_dir, pc_dbfn=pc_dbfn)
+                mbdb.insert_dataset(pref, row["Contributor"], massbank_dir, pc_dbfn=pc_dbfn,
+                                    use_pubchem_structure_info=False)

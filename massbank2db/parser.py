@@ -118,7 +118,7 @@ def get_CH_regex(compile=True) -> dict:
         # https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#225-chsmiles
         "smiles_iso":        ['^CH\$SMILES:\s+(.*)$'],
         "inchikey":          ['^CH\$LINK:\s+INCHIKEY\s+(.*)$'],
-        "inchi":             ['^CH\$LINK:\s+IUPAC\s+(.*)$']
+        "inchi":             ['^CH\$IUPAC:\s+(.*)$']
     }
 
     if compile:
@@ -179,7 +179,7 @@ if __name__ == "__main__":
 
     # msfn = "/run/media/bach/EVO500GB/data/MassBank/Chubu_Univ/UT001973.txt"
 
-    for msfn in sorted(glob("/run/media/bach/EVO500GB/data/MassBank/ISAS_Dortmund/IA*.txt")):
+    for msfn in sorted(glob("/run/media/bach/EVO500GB/data/MassBank-data_bachi55/ISAS_Dortmund/IA*.txt")):
         # Read all meta information from the MS-file
         try:
             spec = MBSpectrum(msfn)
