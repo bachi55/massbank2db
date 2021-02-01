@@ -134,6 +134,12 @@ class MBSpectrum(object):
 
         return True
 
+    def _to_sirius_format(self, cands=None, **kwargs):
+        # Meta-information
+        compound = ">compound %s" % self.get("accession")
+        parentmass = ">parentmass %f" % self.get("exact_mass")
+        pass
+
     def _to_metfrag_format(self, cands=None, **kwargs):
         # All supported MetFrag precursor (ion) types: https://ipb-halle.github.io/MetFrag/projects/metfragcl/
         # Apply molecular formula simplifications, e.g. CH3COO --> C2H3O2 or CH3OH --> CH4O, source for that

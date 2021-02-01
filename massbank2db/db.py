@@ -125,7 +125,7 @@ class MassbankDB(object):
                     copyright           VARCHAR, \
                     license             VARCHAR, \
                     column_name         VARCHAR NOT NULL, \
-                    column_type         VARCHAR NOT NULL, \
+                    column_type         VARCHAR, \
                     column_temperature  FLOAT, \
                     flow_gradient       VARCHAR NOT NULL, \
                     flow_rate           FLOAT, \
@@ -134,7 +134,7 @@ class MassbankDB(object):
                     solvent             VARCHAR, \
                     instrument_type     VARCHAR NOT NULL, \
                     instrument          VARCHAR NOT NULL, \
-                    fragmentation_mode  VARCHAR NOT NULL, \
+                    fragmentation_mode  VARCHAR, \
                     column_dead_time    FLOAT)"
             )
 
@@ -186,7 +186,7 @@ class MassbankDB(object):
 
     def insert_dataset(self, accession_prefix, contributor, base_path, only_with_rt=True, only_ms2=True,
                        use_pubchem_structure_info=True, pc_dbfn=None, min_number_of_unique_compounds_per_dataset=50,
-                       exclude_deprecated=True):
+                       exclude_deprecated=True, max_exact_mass_error_ppm=20):
         """
         Insert all accession of the specified contributor with specified prefix to the database. Each contributor and
         each corresponding accession prefix represents a separate dataset. Furthermore, different chromatographic (LC)
@@ -279,6 +279,20 @@ class MassbankDB(object):
                 # -----------------------------------
                 # Insert the spectrum to the database
                 # -----------------------------------
+                exact_mass_error_ppm = get_mass_error_in_ppm(
+                    float(specs[acc].get("exact_mass")),
+                    float(specs[acc].get("precursor_mz")),
+                    specs[acc].get("precursor_type"))
+                if exact_mass_error_ppm is None:
+                    LOGGER.info("{} Could not determine exact mass error. (precursor-type={})"
+                                .format(acc, specs[acc].get("precursor_type")))
+                    continue
+                if exact_mass_error_ppm > max_exact_mass_error_ppm:
+                    LOGGER.info("{} Exact mass error is above threshold: {}ppm > {}ppm. (precursor-type={})"
+                                .format(acc, exact_mass_error_ppm, max_exact_mass_error_ppm,
+                                        specs[acc].get("precursor_type")))
+                    continue
+
                 try:
                     with self._mb_conn:
                         self.insert_spectrum(dataset_identifier, contributor, specs[acc])
@@ -348,7 +362,7 @@ class MassbankDB(object):
                                    spectrum.get("copyright"),
                                    spectrum.get("license"),
                                    spectrum.get("column_name"),
-                                   "",  # FIXME: column type, e.g. RP or HILIC, is not specified in the Massbank file
+                                   None,  # FIXME: column type, e.g. RP or HILIC, is not specified in the Massbank file
                                    spectrum.get("column_temperature"),
                                    spectrum.get("flow_gradient"),
                                    spectrum.get("flow_rate"),
@@ -376,9 +390,7 @@ class MassbankDB(object):
                                    spectrum.get("ms_type"),
                                    spectrum.get("resolution"),
                                    spectrum.get("fragmentation_mode"),
-                                   get_mass_error_in_ppm(float(spectrum.get("exact_mass")),
-                                                         float(spectrum.get("precursor_mz")),
-                                                         spectrum.get("precursor_type"))
+                                   spectrum.get("exact_mass_error_ppm")
                                ))
 
         # ====================
@@ -600,7 +612,7 @@ if __name__ == "__main__":
         mbdb.initialize_tables(reset=True)
 
     # Filename of the local PubChem DB
-    pc_dbfn = "/run/media/bach/EVO500GB/data/pubchem_24-06-2019/db/pubchem.sqlite"
+    pc_dbfn = "/home/bach/Documents/doctoral/projects/local_pubchem_db/db_files/pubchem.sqlite"
 
     # Insert spectra into the MassBank DB
     for idx, row in mbds.iterrows():
@@ -609,4 +621,4 @@ if __name__ == "__main__":
             print(pref)
             with MassbankDB(mb_dbfn) as mbdb:
                 mbdb.insert_dataset(pref, row["Contributor"], massbank_dir, pc_dbfn=pc_dbfn,
-                                    use_pubchem_structure_info=False)
+                                    use_pubchem_structure_info=True)
