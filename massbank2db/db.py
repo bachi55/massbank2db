@@ -103,13 +103,16 @@ class MassbankDB(object):
                      inchikey2         VARCHAR NOT NULL, \
                      smiles_iso        VARCHAR NOT NULL, \
                      smiles_can        VARCHAR, \
-                     exact_mass        FLOAT NOT NULL, \
+                     exact_mass        FLOAT, \
+                     monoisotopic_mass FLOAT NOT NULL, \
                      molecular_formula VARCHAR NOT NULL)")
             self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchi_index ON molecules(inchi)")
             self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey_index ON molecules(inchikey)")
             self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey1_index ON molecules(inchikey1)")
             self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey2_index ON molecules(inchikey2)")
             self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_exact_mass_index ON molecules(exact_mass)")
+            self._mb_conn.execute(
+                "CREATE INDEX IF NOT EXISTS molecules_monoisotopic_mass_index ON molecules(monoisotopic_mass)")
             self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_mf_index ON molecules(molecular_formula)")
 
             # Datasets Meta-information table
@@ -280,7 +283,7 @@ class MassbankDB(object):
                 # Insert the spectrum to the database
                 # -----------------------------------
                 exact_mass_error_ppm = get_mass_error_in_ppm(
-                    float(specs[acc].get("exact_mass")),
+                    float(specs[acc].get("monoisotopic_mass")),
                     float(specs[acc].get("precursor_mz")),
                     specs[acc].get("precursor_type"))
                 if exact_mass_error_ppm is None:
@@ -322,7 +325,7 @@ class MassbankDB(object):
         # ===========================
         # Insert Molecule Information
         # ===========================
-        self._mb_conn.execute("INSERT OR IGNORE INTO molecules VALUES (%s)" % self._get_db_value_placeholders(9),
+        self._mb_conn.execute("INSERT OR IGNORE INTO molecules VALUES (%s)" % self._get_db_value_placeholders(10),
                               (
                                    spectrum.get("pubchem_id"),
                                    spectrum.get("inchi"),
@@ -332,6 +335,7 @@ class MassbankDB(object):
                                    spectrum.get("smiles_iso"),
                                    spectrum.get("smiles_can"),
                                    spectrum.get("exact_mass"),
+                                   spectrum.get("monoisotopic_mass"),
                                    spectrum.get("molecular_formula")
                                ))
 

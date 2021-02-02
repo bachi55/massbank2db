@@ -28,6 +28,7 @@ import logging
 import numpy as np
 import os
 import sqlite3
+import pandas as pd
 
 from ctypes import c_double, c_int, byref
 from typing import Dict, List
@@ -111,10 +112,11 @@ class MBSpectrum(object):
 
         # TODO: Update also molecular weight. For that we need to rebuild the local PubChem DB.
         # TODO: Add the XLogP3 information to the spectrum
-        rows = db_conn.execute("SELECT cid, InChI, InChIKey, SMILES_CAN, SMILES_ISO, exact_mass, molecular_formula "
-                               "    FROM compounds"
-                               "    WHERE %s is ? "
-                               "    ORDER BY cid ASC" % id_type, (id, )).fetchall()
+        rows = pd.read_sql_query("SELECT cid, InChI AS inchi, InChIKey AS inchikey, SMILES_CAN AS smiles_can,"
+                                 "       SMILES_ISO AS smiles_iso, exact_mass, molecular_formula, monoisotopic_mass"
+                                 "    FROM compounds"
+                                 "    WHERE %s is '%s' "
+                                 "    ORDER BY cid ASC" % (id_type, id), db_conn)
 
         db_conn.close()
 
@@ -124,13 +126,13 @@ class MBSpectrum(object):
             return False
         elif len(rows) > 1:
             assert id_type == "InChIKey"
+
             LOGGER.warning("(%s) Multiple compounds (n=%d) matching the InChIKey (%s). Taking the one with the lowest "
                            "CID to update the compound information." % (self.get("accession"), len(rows), id))
 
         # Update the information
-        for c, name in enumerate(["pubchem_id", "inchi", "inchikey", "smiles_can", "smiles_iso", "exact_mass",
-                                  "molecular_formula"]):
-            self.set(name, rows[0][c])
+        for k, v in rows.iloc[0].items():
+            self.set(k, v)
 
         return True
 

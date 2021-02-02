@@ -114,7 +114,9 @@ def get_CH_regex(compile=True) -> dict:
         "pubchem_id":        ['^CH\$LINK:\s+PUBCHEM\s+CID:(\d+)$',
                               '^CH\$LINK:\s+PUBCHEM\s+CID:(\d+)\s+SID:\d+$',
                               '^CH\$LINK:\s+PUBCHEM\s+SID:\d+\s+CID:(\d+)$'],
-        "exact_mass":        ['^CH\$EXACT_MASS:\s+(.*)$'],
+        # Massbank documentation states, that the exact mass field stores the 'monoisotopic mass'
+        # https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#224-chexact_mass
+        "monoisotopic_mass": ['^CH\$EXACT_MASS:\s+(.*)$'],
         # MassBank documentation states, that the SMILES strings correspond to isomeric smiles:
         # https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#225-chsmiles
         "smiles_iso":        ['^CH\$SMILES:\s+(.*)$'],

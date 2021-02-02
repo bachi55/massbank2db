@@ -52,7 +52,7 @@ def get_precursor_mz(exact_mass, precursor_type):
     d = {'[M+H]+': 1.007276,
          '[M-H]-': -1.007276,
          '[M+HCOO]-': -44.9982,
-         '[M+CH3COO]-': 59.01385,
+         '[M+CH3COO]-': 59.01385, '[M+CH3COOH-H]-': 59.01385,
          '[M+CH2O2-H]-': 44.9982, '[M-H+CH2O2]-': 44.9982,
          '[M-H2O+H]+': 1.007276 - 18.010565, '[M-2H2O+H]+': 1.007276 - 2 * 18.010565,
          '[M+Na]+': 22.98922,
@@ -67,16 +67,16 @@ def get_precursor_mz(exact_mass, precursor_type):
         raise KeyError("Unsupported precursor-type '%s'." % precursor_type)
 
 
-def get_mass_error_in_ppm(exact_mass, precursor_mz, precursor_type):
+def get_mass_error_in_ppm(monoisotopic_mass, precursor_mz, precursor_type):
     """
 
-    :param exact_mass:
+    :param monoisotopic_mass:
     :param precursor_mz:
     :param precursor_type:
     :return:
     """
     try:
-        theoretical_precursor_mz = get_precursor_mz(exact_mass, precursor_type)
+        theoretical_precursor_mz = get_precursor_mz(monoisotopic_mass, precursor_type)
     except KeyError:
         return None
 
