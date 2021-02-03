@@ -32,6 +32,8 @@ import logging
 import pandas as pd
 import numpy as np
 
+from typing import Optional, List
+
 import massbank2db.spectrum
 from massbank2db.utils import get_mass_error_in_ppm
 
@@ -106,14 +108,6 @@ class MassbankDB(object):
                      monoisotopic_mass FLOAT NOT NULL, \
                      molecular_formula VARCHAR NOT NULL, \
                      xlogp3            FLOAT)")
-            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchi_index ON molecules(inchi)")
-            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey_index ON molecules(inchikey)")
-            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey1_index ON molecules(inchikey1)")
-            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey2_index ON molecules(inchikey2)")
-            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_exact_mass_index ON molecules(exact_mass)")
-            self._mb_conn.execute(
-                "CREATE INDEX IF NOT EXISTS molecules_monoisotopic_mass_index ON molecules(monoisotopic_mass)")
-            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_mf_index ON molecules(molecular_formula)")
 
             # Datasets Meta-information table
             #   primary key: Accession prefix + some running id
@@ -162,7 +156,6 @@ class MassbankDB(object):
                  FOREIGN KEY(molecule)      REFERENCES molecules(cid),\
                  FOREIGN KEY(dataset)       REFERENCES datasets(name) ON DELETE CASCADE)"
             )
-            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS spectra_meta_dataset_index ON spectra_meta(dataset)")
 
             # Spectra Retention Time information table
             self._mb_conn.execute(
@@ -172,10 +165,6 @@ class MassbankDB(object):
                     retention_time_unit VARCHAR DEFAULT 'min', \
                  FOREIGN KEY(spectrum) REFERENCES spectra_meta(accession) ON DELETE CASCADE)"
             )
-            self._mb_conn.execute(
-                "CREATE INDEX IF NOT EXISTS spectra_raw_rts_spectrum_index ON spectra_raw_rts(spectrum)")
-            self._mb_conn.execute(
-                "CREATE INDEX IF NOT EXISTS spectra_raw_rts_retention_time_index ON spectra_raw_rts(retention_time)")
 
             # Spectra Peak Information table
             self._mb_conn.execute(
@@ -185,11 +174,41 @@ class MassbankDB(object):
                     intensity FLOAT NOT NULL, \
                  FOREIGN KEY(spectrum) REFERENCES spectra_meta(accession) ON DELETE CASCADE)"
             )
+
+            # ------------------
+            # Create indices
+            # ------------------
+            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchi_index             ON molecules(inchi)")
+            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey_index          ON molecules(inchikey)")
+            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey1_index         ON molecules(inchikey1)")
+            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey2_index         ON molecules(inchikey2)")
+            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_exact_mass_index        ON molecules(exact_mass)")
+            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_monoisotopic_mass_index ON molecules(monoisotopic_mass)")
+            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_mf_index                ON molecules(molecular_formula)")
+
+            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS spectra_meta_dataset_index           ON spectra_meta(dataset)")
+            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS spectra_raw_rts_spectrum_index       ON spectra_raw_rts(spectrum)")
+            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS spectra_raw_rts_retention_time_index ON spectra_raw_rts(retention_time)")
+
             self._mb_conn.execute("CREATE INDEX IF NOT EXISTS spectra_peaks_spectrum_index ON spectra_peaks(spectrum)")
 
+            # ------------------
+            # Create triggers
+            # ------------------
+            # Remove molecules that are not referenced anymore by any spectra, e.g. after a filtering operation
+            self._mb_conn.execute("CREATE TRIGGER remove_molecules_without_spectra_reference "
+                                  "    AFTER DELETE "
+                                  "    ON spectra_meta"
+                                  "    BEGIN"
+                                  "        DELETE FROM molecules WHERE cid IN ("
+                                  "            SELECT cid FROM molecules "
+                                  "                LEFT OUTER JOIN spectra_meta sm ON molecules.cid = sm.molecule"
+                                  "                WHERE accession IS NULL"
+                                  "            );"
+                                  "    END")
+
     def insert_dataset(self, accession_prefix, contributor, base_path, only_with_rt=True, only_ms2=True,
-                       use_pubchem_structure_info=True, pc_dbfn=None, min_number_of_unique_compounds_per_dataset=50,
-                       exclude_deprecated=True, max_exact_mass_error_ppm=20):
+                       use_pubchem_structure_info=True, pc_dbfn=None, exclude_deprecated=True):
         """
         Insert all accession of the specified contributor with specified prefix to the database. Each contributor and
         each corresponding accession prefix represents a separate dataset. Furthermore, different chromatographic (LC)
@@ -269,17 +288,12 @@ class MassbankDB(object):
         for acc_pref_idx, row in enumerate(cur):
             dataset_identifier = "%s_%03d" % (accession_prefix, acc_pref_idx)
 
-            if row[0] < min_number_of_unique_compounds_per_dataset:
-                LOGGER.info("Skip {} due to low number of unique compounds: {} < {}."
-                            .format(dataset_identifier, row[0], min_number_of_unique_compounds_per_dataset))
-                continue
-
             for acc in sorted(row[1].split(",")):
                 # -----------------------------------------------------------------------------
                 # Update the molecule structure information in the spectrum file using PubChem:
                 # -----------------------------------------------------------------------------
                 if use_pubchem_structure_info and \
-                        not specs[acc].update_molecule_structure_information_using_pubchem_NEW(pc_dbfn):
+                        not specs[acc].update_molecule_structure_information_using_pubchem(pc_dbfn):
                     continue
 
                 # -----------------------------------
@@ -293,11 +307,6 @@ class MassbankDB(object):
                     LOGGER.info("{} Could not determine exact mass error. (precursor-type={})"
                                 .format(acc, specs[acc].get("precursor_type")))
                     continue
-                elif specs[acc].get("exact_mass_error_ppm") > max_exact_mass_error_ppm:
-                    LOGGER.info("{} Exact mass error is above threshold: {}ppm > {}ppm. (precursor-type={})"
-                                .format(acc, specs[acc].get("exact_mass_error_ppm"), max_exact_mass_error_ppm,
-                                        specs[acc].get("precursor_type")))
-                    continue
 
                 try:
                     with self._mb_conn:
@@ -310,12 +319,7 @@ class MassbankDB(object):
             # Determine the number of spectra and unique compounds
             # ----------------------------------------------------
             with self._mb_conn:
-                _num_spec, _num_cmp = self._mb_conn.execute("SELECT COUNT(accession), COUNT(distinct molecule) "
-                                                            "   FROM spectra_meta "
-                                                            "   WHERE dataset IS ?", (dataset_identifier,)).fetchone()
-                self._mb_conn.execute("UPDATE datasets "
-                                      "   SET num_spectra = ?, num_compounds = ?"
-                                      "   WHERE name IS ?", (_num_spec, _num_cmp, dataset_identifier))
+                self._update_num_spectra_and_compounds_in_dataset_table(dataset_identifier)
 
         filter_db_conn.close()
 
@@ -535,6 +539,62 @@ class MassbankDB(object):
         if pc_conn:
             pc_conn.close()
 
+    def filter_datasets_by_number_of_unique_compounds(self, min_number_of_unique_compounds_per_dataset: int = 50):
+        """
+
+        :param min_number_of_unique_compounds_per_dataset:
+        :return:
+        """
+        for ds in self._get_list_of_datasets():
+            _num_cmp = self._mb_conn.execute(
+                "SELECT COUNT(distinct molecule) FROM spectra_meta WHERE dataset IS ?", (ds, )).fetchone()[0]
+
+            if _num_cmp < min_number_of_unique_compounds_per_dataset:
+                LOGGER.info("Remove {} due to low number of unique compounds: {} < {}."
+                            .format(ds, _num_cmp, min_number_of_unique_compounds_per_dataset))
+
+                with self._mb_conn:
+                    self._mb_conn.execute("DELETE FROM datasets WHERE name IS ?", (ds, ))  # triggers an SQLite event
+
+        return self
+
+    def filter_spectra_by_mass_error(self, max_exact_mass_error_ppm: float = 20):
+        """
+
+        :param max_exact_mass_error_ppm:
+        :return:
+        """
+        with self._mb_conn:
+            self._mb_conn.execute("DELETE FROM spectra_meta WHERE exact_mass_error_ppm > ?", (max_exact_mass_error_ppm, ))
+
+        self._update_num_spectra_and_compounds_in_dataset_table()
+
+        return self
+
+    def filter_spectra_by_retention_time(self):
+        pass
+
+    def _get_list_of_datasets(self) -> List[str]:
+        return [row[0] for row in self._mb_conn.execute("SELECT name FROM datasets")]
+
+    def _update_num_spectra_and_compounds_in_dataset_table(self, dataset_identifier: Optional[str] = None) -> None:
+        """
+        Function to update the number of spectra and unique compounds for the given datasets.
+
+        :param dataset_identifier: string or None, name of the dataset for which the statistics should be updated. If
+            None, all datasets are updated.
+        """
+        if dataset_identifier is None:
+            for ds in self._get_list_of_datasets():
+                self._update_num_spectra_and_compounds_in_dataset_table(ds)
+        else:
+            _num_spec, _num_cmp = self._mb_conn.execute("SELECT COUNT(accession), COUNT(distinct molecule) "
+                                                        "   FROM spectra_meta "
+                                                        "   WHERE dataset IS ?", (dataset_identifier,)).fetchone()
+            self._mb_conn.execute("UPDATE datasets "
+                                  "   SET num_spectra = ?, num_compounds = ?"
+                                  "   WHERE name IS ?", (_num_spec, _num_cmp, dataset_identifier))
+
     @staticmethod
     def _cands_to_metfrag_format(cands):
         cands_out = cands[["exact_mass", "InChI", "cid", "InChIKey", "molecular_formula", "SMILES_ISO"]]
@@ -615,7 +675,7 @@ if __name__ == "__main__":
         .rename({1: "Contributor", 4: "AccPref"}, axis=1)  # type: pd.DataFrame
 
     # Filename of the MassBank (output) DB
-    mb_dbfn = "tests/test_DB.sqlite"
+    mb_dbfn = "tests/test_DB_with_filters.sqlite"
     with MassbankDB(mb_dbfn) as mbdb:
         mbdb.initialize_tables(reset=True)
 
@@ -631,3 +691,8 @@ if __name__ == "__main__":
             with MassbankDB(mb_dbfn) as mbdb:
                 mbdb.insert_dataset(pref, row["Contributor"], massbank_dir, pc_dbfn=pc_dbfn,
                                     use_pubchem_structure_info=True)
+
+    # Filter the database
+    with MassbankDB(mb_dbfn) as mbdb:
+        mbdb.filter_spectra_by_mass_error(max_exact_mass_error_ppm=20) \
+            .filter_datasets_by_number_of_unique_compounds(min_number_of_unique_compounds_per_dataset=50)

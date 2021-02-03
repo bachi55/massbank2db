@@ -28,7 +28,6 @@ import logging
 import numpy as np
 import os
 import sqlite3
-import pandas as pd
 
 from ctypes import c_double, c_int, byref
 from typing import Dict, List, Optional, Union
@@ -86,7 +85,7 @@ class MBSpectrum(object):
     def set_int(self, ints):
         self._int = ints
 
-    def update_molecule_structure_information_using_pubchem_NEW(
+    def update_molecule_structure_information_using_pubchem(
             self, pc_dbfn: str, ids: Optional[Union[str, List[str]]] = None) -> bool:
         """
         Information of the molecular structure are extracted from PubChem. We use the CID (if provided) or the InChIKey
