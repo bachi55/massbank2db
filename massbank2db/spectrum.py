@@ -31,7 +31,7 @@ import sqlite3
 import pandas as pd
 
 from ctypes import c_double, c_int, byref
-from typing import Dict, List
+from typing import Dict, List, Optional, Union
 from scipy.spatial.distance import pdist
 from zlib import crc32
 
@@ -86,7 +86,8 @@ class MBSpectrum(object):
     def set_int(self, ints):
         self._int = ints
 
-    def update_molecule_structure_information_using_pubchem(self, pc_dbfn):
+    def update_molecule_structure_information_using_pubchem_NEW(
+            self, pc_dbfn: str, ids: Optional[Union[str, List[str]]] = None) -> bool:
         """
         Information of the molecular structure are extracted from PubChem. We use the CID (if provided) or the InChIKey
         provided in the Massbank file to find the compound in PubChem. The motivation is, that we have SMILES
@@ -94,53 +95,64 @@ class MBSpectrum(object):
 
         :param pc_dbfn: string, path to the local PubChem DB stored in an SQLite file
 
+        :param ids:
+
         :return: boolean, indicating whether an update could be performed.
         """
-        # Get the ID, PubChem (cid) or InChIKey, to query information from the local PubChem DB
-        if self.get("pubchem_id"):
-            id, id_type = int(self.get("pubchem_id")), "cid"
-        elif self.get("inchikey"):
-            id, id_type = self.get("inchikey"), "InChIKey"
-        else:
-            LOGGER.info("(%s) : Cannot update molecule structure information. No ID defined, either CID or InChIKey."
-                        % self.get("accession"))
-            return False
+        def my_row_factor(cursor, row):
+            """
+            SOURCE: https://docs.python.org/3.5/library/sqlite3.html#sqlite3.Connection.row_factory
+            """
+            d = {}
+            for idx, col in enumerate(cursor.description):
+                d[col[0]] = row[idx]
+            return d
 
-        # Fetch information from local DB
-        # Open a connection to a local PubChemDB if provided
+        if ids is None:
+            ids = ["inchi", "inchikey"]
+
+        ids = np.atleast_1d(ids)
+
+        # Open a connection to a local PubChemDB
         db_conn = sqlite3.connect("file:" + pc_dbfn + "?mode=ro", uri=True)  # open read-only
+        db_conn.row_factory = my_row_factor
 
-        # TODO: Update also molecular weight. For that we need to rebuild the local PubChem DB.
-        # TODO: Add the XLogP3 information to the spectrum
-        rows = pd.read_sql_query("SELECT cid, InChI AS inchi, InChIKey AS inchikey, SMILES_CAN AS smiles_can,"
-                                 "       SMILES_ISO AS smiles_iso, exact_mass, molecular_formula, monoisotopic_mass"
-                                 "    FROM compounds"
-                                 "    WHERE %s is '%s' "
-                                 "    ORDER BY cid ASC" % (id_type, id), db_conn)
+        for _id in ids:
+            # Get the ID values to query information from the local PubChem DB
+            id_value = self.get(_id)
+
+            if id_value is None:
+                LOGGER.info("({}) ID={} is not provided in the Massbank entry.".format(self.get("accession"), _id))
+                continue
+
+            # Fetch information from local DB (if multiple matches --> the one with lowest CID is returned)
+            res = db_conn.execute(
+                "SELECT cid AS pubchem_id, InChI AS inchi, InChIKey AS inchikey, SMILES_CAN AS smiles_can,"
+                "       SMILES_ISO AS smiles_iso, exact_mass, molecular_formula, monoisotopic_mass, xlogp3"
+                "    FROM compounds"
+                "    WHERE %s is ?"
+                "    ORDER BY cid ASC" % _id, (id_value, )).fetchone()
+
+            # Update the compound with the PubChem information of found
+            if res:
+                for k, v in res.items():
+                    self.set(k, v)
+
+                return True
 
         db_conn.close()
 
-        if len(rows) == 0:
-            LOGGER.info("({}) Could not find any compound with {}={} in the local PubChem DB."
-                        .format(self.get("accession"), id_type, id))
-            return False
-        elif len(rows) > 1:
-            assert id_type == "InChIKey"
+        LOGGER.info("({}) Could not find any compound in the local PubChem DB.".format(self.get("accession")))
 
-            LOGGER.warning("(%s) Multiple compounds (n=%d) matching the InChIKey (%s). Taking the one with the lowest "
-                           "CID to update the compound information." % (self.get("accession"), len(rows), id))
-
-        # Update the information
-        for k, v in rows.iloc[0].items():
-            self.set(k, v)
-
-        return True
+        return False
 
     def _to_sirius_format(self, cands=None, **kwargs):
+        raise NotImplementedError()
+
         # Meta-information
-        compound = ">compound %s" % self.get("accession")
-        parentmass = ">parentmass %f" % self.get("exact_mass")
-        pass
+        # compound = ">compound %s" % self.get("accession")
+        # parentmass = ">parentmass %f" % self.get("exact_mass")
+        # pass
 
     def _to_metfrag_format(self, cands=None, **kwargs):
         # All supported MetFrag precursor (ion) types: https://ipb-halle.github.io/MetFrag/projects/metfragcl/

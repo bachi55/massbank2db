@@ -51,10 +51,10 @@ def get_precursor_mz(exact_mass, precursor_type):
     # https://docs.google.com/spreadsheets/d/1r4dPw1shIEy_W2BkfgPsihinwg-Nah654VlNTn8Gxo0/edit?usp=sharing
     d = {'[M+H]+': 1.007276,
          '[M-H]-': -1.007276,
-         '[M+HCOO]-': -44.9982,
          '[M+CH3COO]-': 59.01385, '[M+CH3COOH-H]-': 59.01385,
-         '[M+CH2O2-H]-': 44.9982, '[M-H+CH2O2]-': 44.9982,
-         '[M-H2O+H]+': 1.007276 - 18.010565, '[M-2H2O+H]+': 1.007276 - 2 * 18.010565,
+         '[M+CHO2]-': 44.9982, '[M+HCOO]-': 44.9982, '[M+CH2O2-H]-': 44.9982, '[M-H+CH2O2]-': 44.9982,
+         '[M-H2O+H]+': 1.007276 - 18.010565, '[M+H-H2O]+': 1.007276 - 18.010565,
+         '[M-2H2O+H]+': 1.007276 - 2 * 18.010565,
          '[M+Na]+': 22.98922,
          '[M]+': 0,
          '[M]-': 0,

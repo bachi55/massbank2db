@@ -35,12 +35,11 @@ import numpy as np
 import massbank2db.spectrum
 from massbank2db.utils import get_mass_error_in_ppm
 
-# Setup the Logger
+# Setup the Loggers
 LOGGER = logging.getLogger(__name__)
-CH = logging.StreamHandler()
-FORMATTER = logging.Formatter('[%(levelname)s] %(name)s : %(message)s')
-CH.setFormatter(FORMATTER)
-LOGGER.addHandler(CH)
+__SH = logging.StreamHandler()
+__SH.setFormatter(logging.Formatter('[%(levelname)s] %(name)s : %(message)s'))
+LOGGER.addHandler(__SH)
 
 
 class MassbankDB(object):
@@ -105,7 +104,8 @@ class MassbankDB(object):
                      smiles_can        VARCHAR, \
                      exact_mass        FLOAT, \
                      monoisotopic_mass FLOAT NOT NULL, \
-                     molecular_formula VARCHAR NOT NULL)")
+                     molecular_formula VARCHAR NOT NULL, \
+                     xlogp3            FLOAT)")
             self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchi_index ON molecules(inchi)")
             self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey_index ON molecules(inchikey)")
             self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_inchikey1_index ON molecules(inchikey1)")
@@ -230,21 +230,23 @@ class MassbankDB(object):
         #   (see 'min_number_of_unique_compounds_per_dataset')
         filter_db_conn = self._get_temporal_database()  # in memory
         specs = {}
-        with filter_db_conn:
-            for msfn in glob.iglob(os.path.join(base_path, contributor, accession_prefix + "[0-9]*.txt")):
-                acc = os.path.basename(msfn).split(".")[0]
-                specs[acc] = massbank2db.spectrum.MBSpectrum(msfn)
-                assert specs[acc].get("accession") == acc
 
-                if specs[acc].get("inchikey") is None:
-                    LOGGER.info("(%s) No compound structure information, i.e. no InChIKey." % acc)
-                    continue
+        msfns = glob.glob(os.path.join(base_path, contributor, accession_prefix + "[0-9]*.txt"))
+        LOGGER.info("Number of files: %d" % len(msfns))
+        for msfn in msfns:
+            acc = os.path.basename(msfn).split(".")[0]
+            specs[acc] = massbank2db.spectrum.MBSpectrum(msfn)
+            assert specs[acc].get("accession") == acc
 
-                if exclude_deprecated and specs[acc].get("deprecated") is not None:
-                    LOGGER.info("(%s) Deprecated entry: '%s'" % (acc, specs[acc].get("deprecated")))
-                    continue
+            if specs[acc].get("inchikey") is None:
+                LOGGER.info("(%s) No compound structure information, i.e. no InChIKey." % acc)
+                continue
 
-                _add_spec_to_filter_db(specs[acc])
+            if exclude_deprecated and specs[acc].get("deprecated") is not None:
+                LOGGER.info("(%s) Deprecated entry: '%s'" % (acc, specs[acc].get("deprecated")))
+                continue
+
+            _add_spec_to_filter_db(specs[acc])
 
         # =====================
         # Group the accessions:
@@ -264,35 +266,36 @@ class MassbankDB(object):
         # ============================================
         # Include the accessions as separate datasets:
         # ============================================
-        acc_pref_idx = 0
-        for row in cur:
-            if row[0] < min_number_of_unique_compounds_per_dataset:
-                continue
-
+        for acc_pref_idx, row in enumerate(cur):
             dataset_identifier = "%s_%03d" % (accession_prefix, acc_pref_idx)
 
-            for acc in row[1].split(","):
+            if row[0] < min_number_of_unique_compounds_per_dataset:
+                LOGGER.info("Skip {} due to low number of unique compounds: {} < {}."
+                            .format(dataset_identifier, row[0], min_number_of_unique_compounds_per_dataset))
+                continue
+
+            for acc in sorted(row[1].split(",")):
                 # -----------------------------------------------------------------------------
                 # Update the molecule structure information in the spectrum file using PubChem:
                 # -----------------------------------------------------------------------------
                 if use_pubchem_structure_info and \
-                        not specs[acc].update_molecule_structure_information_using_pubchem(pc_dbfn):
+                        not specs[acc].update_molecule_structure_information_using_pubchem_NEW(pc_dbfn):
                     continue
 
                 # -----------------------------------
                 # Insert the spectrum to the database
                 # -----------------------------------
-                exact_mass_error_ppm = get_mass_error_in_ppm(
-                    float(specs[acc].get("monoisotopic_mass")),
-                    float(specs[acc].get("precursor_mz")),
-                    specs[acc].get("precursor_type"))
-                if exact_mass_error_ppm is None:
+                specs[acc].set("exact_mass_error_ppm",
+                               get_mass_error_in_ppm(float(specs[acc].get("monoisotopic_mass")),
+                                                     float(specs[acc].get("precursor_mz")),
+                                                     specs[acc].get("precursor_type")))
+                if specs[acc].get("exact_mass_error_ppm") is None:
                     LOGGER.info("{} Could not determine exact mass error. (precursor-type={})"
                                 .format(acc, specs[acc].get("precursor_type")))
                     continue
-                if exact_mass_error_ppm > max_exact_mass_error_ppm:
+                elif specs[acc].get("exact_mass_error_ppm") > max_exact_mass_error_ppm:
                     LOGGER.info("{} Exact mass error is above threshold: {}ppm > {}ppm. (precursor-type={})"
-                                .format(acc, exact_mass_error_ppm, max_exact_mass_error_ppm,
+                                .format(acc, specs[acc].get("exact_mass_error_ppm"), max_exact_mass_error_ppm,
                                         specs[acc].get("precursor_type")))
                     continue
 
@@ -309,12 +312,12 @@ class MassbankDB(object):
             with self._mb_conn:
                 _num_spec, _num_cmp = self._mb_conn.execute("SELECT COUNT(accession), COUNT(distinct molecule) "
                                                             "   FROM spectra_meta "
-                                                            "   WHERE dataset IS ?", (dataset_identifier,)).fetchall()[0]
+                                                            "   WHERE dataset IS ?", (dataset_identifier,)).fetchone()
                 self._mb_conn.execute("UPDATE datasets "
                                       "   SET num_spectra = ?, num_compounds = ?"
                                       "   WHERE name IS ?", (_num_spec, _num_cmp, dataset_identifier))
 
-            acc_pref_idx += 1
+        filter_db_conn.close()
 
     def insert_spectrum(self, dataset_identifier: str, contributor: str, spectrum):
         """
@@ -325,7 +328,7 @@ class MassbankDB(object):
         # ===========================
         # Insert Molecule Information
         # ===========================
-        self._mb_conn.execute("INSERT OR IGNORE INTO molecules VALUES (%s)" % self._get_db_value_placeholders(10),
+        self._mb_conn.execute("INSERT OR IGNORE INTO molecules VALUES (%s)" % self._get_db_value_placeholders(11),
                               (
                                    spectrum.get("pubchem_id"),
                                    spectrum.get("inchi"),
@@ -336,7 +339,8 @@ class MassbankDB(object):
                                    spectrum.get("smiles_can"),
                                    spectrum.get("exact_mass"),
                                    spectrum.get("monoisotopic_mass"),
-                                   spectrum.get("molecular_formula")
+                                   spectrum.get("molecular_formula"),
+                                   spectrum.get("xlogp3")
                                ))
 
         # ==========================
@@ -361,12 +365,12 @@ class MassbankDB(object):
                                    dataset_identifier,
                                    contributor,
                                    ion_mode,
-                                   0,
-                                   0,
+                                   -1,
+                                   -1,
                                    spectrum.get("copyright"),
                                    spectrum.get("license"),
                                    spectrum.get("column_name"),
-                                   None,  # FIXME: column type, e.g. RP or HILIC, is not specified in the Massbank file
+                                   None,  # TODO: column type, e.g. RP or HILIC, is not specified in the Massbank file
                                    spectrum.get("column_temperature"),
                                    spectrum.get("flow_gradient"),
                                    spectrum.get("flow_rate"),
@@ -616,13 +620,14 @@ if __name__ == "__main__":
         mbdb.initialize_tables(reset=True)
 
     # Filename of the local PubChem DB
-    pc_dbfn = "/home/bach/Documents/doctoral/projects/local_pubchem_db/db_files/pubchem.sqlite"
+    pc_dbfn = "/home/bach/Documents/doctoral/projects/local_pubchem_db/db_files/pubchem_01-02-2021.sqlite"
 
     # Insert spectra into the MassBank DB
     for idx, row in mbds.iterrows():
-        print("(%02d/%02d) %s: " % (idx + 1, len(mbds), row["Contributor"]))
+        LOGGER.info("== Process Dataset: {} ({} / {}) ==".format(row["Contributor"], idx + 1, len(mbds)))
+
         for pref in map(str.strip, row["AccPref"].split(",")):
-            print(pref)
+            LOGGER.info("-- Process prefix: {}".format(pref))
             with MassbankDB(mb_dbfn) as mbdb:
                 mbdb.insert_dataset(pref, row["Contributor"], massbank_dir, pc_dbfn=pc_dbfn,
                                     use_pubchem_structure_info=True)
