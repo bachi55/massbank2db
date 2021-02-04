@@ -208,7 +208,7 @@ class MassbankDB(object):
                                   "    END")
 
     def insert_dataset(self, accession_prefix, contributor, base_path, only_with_rt=True, only_ms2=True,
-                       use_pubchem_structure_info=True, pc_dbfn=None, exclude_deprecated=True):
+                       use_pubchem_structure_info=True, pc_dbfn=None, exclude_deprecated=True, only_lc=True):
         """
         Insert all accession of the specified contributor with specified prefix to the database. Each contributor and
         each corresponding accession prefix represents a separate dataset. Furthermore, different chromatographic (LC)
@@ -271,12 +271,25 @@ class MassbankDB(object):
         # Group the accessions:
         # =====================
         _stmt = ["SELECT COUNT(DISTINCT inchikey), GROUP_CONCAT(accession) FROM information"]
-        if only_with_rt and only_ms2:
-            _stmt.append("WHERE retention_time IS NOT NULL AND ms_level IS 'MS2'")
-        elif only_with_rt:
-            _stmt.append("WHERE retention_time IS NOT NULL")
-        elif only_ms2:
-            _stmt.append("WHERE ms_level IS 'MS2'")
+
+        # --------------------------------------------------------------
+        # Add additional constraints before the grouping, e.g. only MS2.
+        # --------------------------------------------------------------
+        _cnstr = []
+
+        if only_with_rt:
+            _cnstr.append("retention_time IS NOT NULL")
+        if only_ms2:
+            _cnstr.append("ms_level IS 'MS2'")
+        if only_lc:
+            _cnstr.append("instrument_type LIKE 'LC-%'")
+
+        if len(_cnstr) > 0:
+            _stmt.append("WHERE " + " AND ".join(_cnstr))
+
+        # --------------------
+        # Group the accessions
+        # --------------------
         _stmt.append("GROUP BY ion_mode, instrument, instrument_type, column_name, column_temperature, flow_gradient, "
                      "  flow_rate, solvent_A, solvent_B, fragmentation_mode")
 
@@ -390,6 +403,8 @@ class MassbankDB(object):
         # ===============================
         # Insert Spectra Meta Information
         # ===============================
+        # Note: We can get a "FOREIGN KEY Constrained" SQLite Error here, if the dataset wasn't inserted due to missing
+        #       information (e.g.).
         self._mb_conn.execute("INSERT INTO spectra_meta VALUES (%s)" % self._get_db_value_placeholders(11),
                               (
                                    spectrum.get("accession"),
@@ -675,7 +690,7 @@ if __name__ == "__main__":
         .rename({1: "Contributor", 4: "AccPref"}, axis=1)  # type: pd.DataFrame
 
     # Filename of the MassBank (output) DB
-    mb_dbfn = "tests/test_DB_with_filters.sqlite"
+    mb_dbfn = "tests/test_DB.sqlite"
     with MassbankDB(mb_dbfn) as mbdb:
         mbdb.initialize_tables(reset=True)
 
