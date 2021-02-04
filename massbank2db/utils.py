@@ -24,6 +24,8 @@
 #
 ####
 
+import numpy as np
+
 # TODO: Currently unsupported precursor-types
 #  '[M+CH3COOH-H]-': None,
 #  '[M-2H2O+H]+': None,
@@ -36,6 +38,7 @@
 #  '[M+H-NH3]+': None,
 #  '[M+H-C9H10O5]+': None,
 #  '[M-C6H10O5+H]+': None
+
 
 def get_precursor_mz(exact_mass, precursor_type):
     """
@@ -81,3 +84,28 @@ def get_mass_error_in_ppm(monoisotopic_mass, precursor_mz, precursor_type):
         return None
 
     return (abs(theoretical_precursor_mz - precursor_mz) * 1e6) / theoretical_precursor_mz
+
+
+def estimate_column_deadtime(length, diameter, flowrate, flowrate_unit="uL/min"):
+    """
+    Estimates the column's deadtime given it's length, diameter and flowrate:
+
+        dt = ((pi * (diameter * 0.5)^2 * length * 0.5) / 1000) / flowrate(in mL/min)
+
+    :param length: scalar, length of the column in mm
+    :param diameter: scalar, diameter of the column in mm
+    :param flowrate: scalar, flowrate of the column in 'flowrate_unit'
+    :param flowrate_unit: string, defining the unit of the given flowrate
+    :return: scalar, estimated column deadtime or None if for any of the required input parameters np.isnan is True.
+    """
+    if np.isnan(length) or np.isnan(diameter) or np.isnan(flowrate):
+        return None
+
+    if flowrate_unit.lower() == "ul/min":
+        flowrate /= 1000.0  # convert to mL/min
+    elif flowrate_unit.lower() == "ml/min":
+        pass
+    else:
+        raise ValueError("Invalid flowrate unit: '%s'." % flowrate_unit)
+
+    return ((np.pi * (diameter / 2)**2 * length * 0.5) / 1000) / flowrate

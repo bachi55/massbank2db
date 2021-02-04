@@ -26,6 +26,52 @@
 import unittest
 
 from massbank2db.parser import get_AC_regex, get_CH_regex, get_meta_regex
+from massbank2db.parser import extract_information_to_calculate_column_deadtime
+
+
+class TestParsingOfColumnInformation(unittest.TestCase):
+    def test_column_dimensions_and_flowrate_from_column_name(self):
+        column_names = [
+            "Agilent RRHD Eclipse 50 x 2 mm, 1.8 uM",
+            "Acclaim RSLC C18 2.2um, 2.1x100mm, Thermo",
+            "ACQUITY UPLC BEH Amide 1.7 um 2.1x100mm, Waters",
+            "Acclaim RSLC C18 2.2um, 2.1x100mm, Thermo",
+            "BEH C18 1.7um, 2.1x100mm, Waters",
+            "Waters Acquity BEH C18 1.7um x 2.1 x 150 mm",
+            "Kinetex C18 EVO 2.6 um, 2.1x50 mm, precolumn 2.1x5 mm, Phenomenex",
+            "Develosil C30, Nomura Chemical",
+            "XBridge C18 3.5um, 2.1x50mm, Waters",
+            "Atlantis T3 3um, 3.0x150mm, Waters with guard column",
+            "XBridge C18 3.5um, 2.1x150mm, Waters",
+            "Acquity BEH C18 1.7um, 2.1x150mm (Waters)",
+            "Symmetry C18 Column, Waters",
+            "Kinetex Evo C18 2.6 um 50x2.1 mm, Phenomenex",
+            "Acquity bridged ethyl hybrid C18 (1.7 um, 2.1 mm * 100 mm, Waters)",
+            "Acquity UPLC Peptide BEH C18 column (50*2.1 mm; 1.7 um; 130A)(Waters Co.,Milford, MA, USA)",
+            "Kinetex Core-Shell C18 2.6 um, 3.0 x 100 mm, Phenomenex",
+            "Agilent C8 Cartridge Column 2.1X30mm 3.5 micron (guard); Agilent SB-Aq 2.1x50mm 1.8 micron (analytical)"
+        ]
+        diameters = [(2, "mm"), (2.1, ""), (2.1, ""), (2.1, ""), (2.1, ""), (2.1, ""), (2.1, ""), None, (2.1, ""),
+                     (3, ""), (2.1, ""), (2.1, ""), None, (2.1, "mm"), (2.1, "mm"), (2.1, "mm"), (3.0, ""), (2.1, "")]
+        lengths = [(50, ""), (100, "mm"), (100, "mm"), (100, "mm"), (100, "mm"), (150, "mm"), (50, "mm"), None,
+                   (50, "mm"), (150, "mm"), (150, "mm"), (150, "mm"), None, (50, ""), (100, "mm"), (50, ""), (100, "mm"),
+                   (50, "mm")]
+        flow_rates = [None] * len(diameters)
+
+        assert len(column_names) == len(diameters)
+        assert len(column_names) == len(lengths)
+        assert len(diameters) == len(lengths)
+
+        for idx, cn in enumerate(column_names):
+            dia, length, _ = extract_information_to_calculate_column_deadtime(cn, None)
+
+            try:
+                self.assertEqual(diameters[idx], dia)
+            except AssertionError as err:
+                print(cn)
+                raise err
+
+            self.assertEqual(lengths[idx], length)
 
 
 class TestRegularExpressions(unittest.TestCase):

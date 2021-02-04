@@ -23,12 +23,18 @@
 # SOFTWARE.
 #
 ####
-
 import re
 
+from typing import Union, List
 
-def _compile_regex(regex):
-    return [re.compile(rx) for rx in regex]
+
+def _compile_regex(regex: Union[str, List[str]]) -> Union[re.Pattern, List[re.Pattern]]:
+    if isinstance(regex, str):
+        return re.compile(regex)
+    elif isinstance(regex, list):
+        return [re.compile(rx) for rx in regex]
+    else:
+        raise ValueError("Invalid input. Regular expressions need to be provided as list[str] or str.")
 
 
 def get_meta_regex(compile=True) -> dict:
@@ -173,18 +179,54 @@ def get_AC_regex(compile=True) -> dict:
     return regex
 
 
-if __name__ == "__main__":
+def extract_information_to_calculate_column_deadtime(column_name: str, flow_rate: str):
+    """
+
+    :param column_name:
+    :param flow_rate:
+    :return:
+    """
+    diameter = None
+    length = None
+    flow_rate = None
+
+    # Regular expressions to extract the column length and diameter
+    for regex in _compile_regex([
+        "(?P<diameter_value>\d.\d|\d)\s?(?P<diameter_unit>|mm)\s?[x\*]\s?(?P<length_value>[\d]{2,3})\s?(?P<length_unit>mm)",
+        "(?P<length_value>[\d]{2,3})\s?(?P<length_unit>|mm)\s?[x\*]\s?(?P<diameter_value>\d.\d|\d)\s?(?P<diameter_unit>mm)"
+    ]):
+        match = regex.search(column_name)
+        if match:
+            diameter = (float(match.group("diameter_value")), match.group("diameter_unit"))
+            length = (float(match.group("length_value")), match.group("length_unit"))
+
+            break
+
+    return diameter, length, flow_rate
+
+
+def _run_parser():
     import os
 
     from glob import glob
 
     from massbank2db.spectrum import MBSpectrum
 
-    # msfn = "/run/media/bach/EVO500GB/data/MassBank/Chubu_Univ/UT001973.txt"
-
-    for msfn in sorted(glob("/run/media/bach/EVO500GB/data/MassBank-data_bachi55/ISAS_Dortmund/IA*.txt")):
+    for msfn in sorted(glob("/home/bach/Documents/doctoral/data/MassBank-data_bachi55/ISAS_Dortmund/IA*.txt")):
         # Read all meta information from the MS-file
         try:
             spec = MBSpectrum(msfn)
         except AssertionError:
             print(os.path.basename(msfn))
+
+
+def _run_extraction():
+    column_name = "XBridge C18 3.5um, 2.1x50mm, Waters"
+
+    print(extract_information_to_calculate_column_deadtime(column_name, None))
+
+
+if __name__ == "__main__":
+    # _run_parser()
+    _run_extraction()
+
