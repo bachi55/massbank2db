@@ -87,7 +87,7 @@ def get_mass_error_in_ppm(monoisotopic_mass, precursor_mz, precursor_type):
     return (abs(theoretical_precursor_mz - precursor_mz) * 1e6) / theoretical_precursor_mz
 
 
-def estimate_column_deadtime(length, diameter, flowrate, flowrate_unit="uL/min") -> Optional[float]:
+def estimate_column_deadtime(length, diameter, flow_rate, flow_rate_unit="uL/min") -> Optional[float]:
     """
     Estimates the column's deadtime given it's length, diameter and flowrate:
 
@@ -95,18 +95,18 @@ def estimate_column_deadtime(length, diameter, flowrate, flowrate_unit="uL/min")
 
     :param length: scalar, length of the column in mm
     :param diameter: scalar, diameter of the column in mm
-    :param flowrate: scalar, flowrate of the column in 'flowrate_unit'
-    :param flowrate_unit: string, defining the unit of the given flowrate
+    :param flow_rate: scalar, flowrate of the column in 'flowrate_unit'
+    :param flow_rate_unit: string, defining the unit of the given flowrate
     :return: scalar, estimated column deadtime or None if for any of the required input parameters np.isnan is True.
     """
-    if length is None or diameter is None or flowrate is None:
+    if length is None or diameter is None or flow_rate is None:
         return None
 
-    if flowrate_unit.lower() == "ul/min":
-        flowrate /= 1000.0  # convert to mL/min
-    elif flowrate_unit.lower() == "ml/min":
+    if flow_rate_unit.lower() == "ul/min":
+        flow_rate /= 1000.0  # convert to mL/min
+    elif flow_rate_unit.lower() == "ml/min":
         pass
     else:
-        raise ValueError("Invalid flowrate unit: '%s'." % flowrate_unit)
+        raise ValueError("Invalid flowrate unit: '%s'." % flow_rate_unit)
 
-    return ((np.pi * (diameter / 2)**2 * length * 0.5) / 1000) / flowrate
+    return ((np.pi * (diameter / 2)**2 * length * 0.5) / 1000) / flow_rate

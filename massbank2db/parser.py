@@ -185,6 +185,8 @@ def parse_column_name(column_name: str) -> Tuple[Union[None, Tuple[float, str]],
 
     :return:
     """
+    if column_name is None:
+        return None, None
 
     diameter = None
     length = None
@@ -233,6 +235,9 @@ def parse_flow_rate_string(flow_rate_str: str, aggregate_flow_rates: Optional[Ca
     :param aggregate_flow_rates:
     :return:
     """
+    if flow_rate_str is None:
+        return None
+
     # ---------------------------------------
     # Extract information about the flow rate
     # ---------------------------------------

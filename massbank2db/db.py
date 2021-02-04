@@ -35,7 +35,8 @@ import numpy as np
 from typing import Optional, List
 
 import massbank2db.spectrum
-from massbank2db.utils import get_mass_error_in_ppm
+from massbank2db.utils import get_mass_error_in_ppm, estimate_column_deadtime
+from massbank2db.parser import parse_column_name, parse_flow_rate_string
 
 # Setup the Loggers
 LOGGER = logging.getLogger(__name__)
@@ -114,25 +115,25 @@ class MassbankDB(object):
             #                E.g. AU_001, AU_002
             self._mb_conn.execute(
                 "CREATE TABLE IF NOT EXISTS datasets( \
-                    name                VARCHAR PRIMARY KEY NOT NULL, \
-                    contributor         VARCHAR NOT NULL, \
-                    ion_mode            VARCHAR NOT NULL, \
-                    num_spectra         INTEGER, \
-                    num_compounds       INTEGER, \
-                    copyright           VARCHAR, \
-                    license             VARCHAR, \
-                    column_name         VARCHAR NOT NULL, \
-                    column_type         VARCHAR, \
-                    column_temperature  FLOAT, \
-                    flow_gradient       VARCHAR NOT NULL, \
-                    flow_rate           FLOAT, \
-                    solvent_A           VARCHAR NOT NULL, \
-                    solvent_B           VARCHAR NOT NULL, \
-                    solvent             VARCHAR, \
-                    instrument_type     VARCHAR NOT NULL, \
-                    instrument          VARCHAR NOT NULL, \
-                    fragmentation_mode  VARCHAR, \
-                    column_dead_time    FLOAT)"
+                    name                 VARCHAR PRIMARY KEY NOT NULL, \
+                    contributor          VARCHAR NOT NULL, \
+                    ion_mode             VARCHAR NOT NULL, \
+                    num_spectra          INTEGER, \
+                    num_compounds        INTEGER, \
+                    copyright            VARCHAR, \
+                    license              VARCHAR, \
+                    column_name          VARCHAR NOT NULL, \
+                    column_type          VARCHAR, \
+                    column_temperature   FLOAT, \
+                    flow_gradient        VARCHAR NOT NULL, \
+                    flow_rate            FLOAT, \
+                    solvent_A            VARCHAR NOT NULL, \
+                    solvent_B            VARCHAR NOT NULL, \
+                    solvent              VARCHAR, \
+                    instrument_type      VARCHAR NOT NULL, \
+                    instrument           VARCHAR NOT NULL, \
+                    fragmentation_mode   VARCHAR, \
+                    column_dead_time_min FLOAT)"
             )
 
             # Spectra Meta-information table
@@ -377,6 +378,24 @@ class MassbankDB(object):
                     raise RuntimeError("Ups")
         else:
             ion_mode = ion_mode.lower()
+
+        # Estimate column dead-time
+        try:
+            column_diameter, column_length = parse_column_name(spectrum.get("column_name"))
+            flow_rate = parse_flow_rate_string(spectrum.get("flow_rate"), aggregate_flow_rates=np.mean)
+        except IndexError:
+            LOGGER.warning("({}) Failed parsing the column name (={}) or flow-rate (={}):"
+                           .format(spectrum.get("accession"), spectrum.get("column_name"), spectrum.get("flow_rate")))
+            column_diameter, column_length = None, None
+            flow_rate = None
+
+        if (column_length is not None) and (column_diameter is not None) and (flow_rate is not None):
+            est_column_deadtime = estimate_column_deadtime(
+                length=column_length[0], diameter=column_diameter[0], flow_rate=flow_rate[0],
+                flow_rate_unit=flow_rate[1])
+        else:
+            est_column_deadtime = None
+
         self._mb_conn.execute("INSERT OR IGNORE INTO datasets VALUES (%s)" % self._get_db_value_placeholders(19),
                               (
                                    dataset_identifier,
@@ -387,7 +406,7 @@ class MassbankDB(object):
                                    spectrum.get("copyright"),
                                    spectrum.get("license"),
                                    spectrum.get("column_name"),
-                                   None,  # TODO: column type, e.g. RP or HILIC, is not specified in the Massbank file
+                                   None, # TODO: How to determine HILIC or RP?
                                    spectrum.get("column_temperature"),
                                    spectrum.get("flow_gradient"),
                                    spectrum.get("flow_rate"),
@@ -397,7 +416,7 @@ class MassbankDB(object):
                                    spectrum.get("instrument_type"),
                                    spectrum.get("instrument"),
                                    spectrum.get("fragmentation_mode"),
-                                   None  # TODO: the column dead-time needs to be estimated from the data
+                                   est_column_deadtime
                                ))
 
         # ===============================

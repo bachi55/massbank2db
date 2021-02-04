@@ -133,6 +133,11 @@ class TestParsingOfColumnInformation(unittest.TestCase):
         for idx, frstr in enumerate(flow_rate_strs):
             self.assertEqual(flow_rates[idx], parse_flow_rate_string(frstr))
 
+    def test_flow_rate_parsing__currently_not_handled(self):
+        self.skipTest("TODO")
+
+        "200-320 (0-1 min); 200 (1-38 min) ul/min'"
+
 
 class TestRegularExpressions(unittest.TestCase):
     def test_AC_retention_time(self):

@@ -36,17 +36,17 @@ class TestColumnDeadtimeEstimation(unittest.TestCase):
         self.assertEqual(estimate_column_deadtime(1, 1, None), None)
 
     def test_correctness(self):
-        np.testing.assert_allclose(estimate_column_deadtime(150, 2.1, 0.5, flowrate_unit="mL/Min"),
+        np.testing.assert_allclose(estimate_column_deadtime(150, 2.1, 0.5, flow_rate_unit="mL/Min"),
                                    0.519540885087412, )
-        np.testing.assert_allclose(estimate_column_deadtime(150, 2.1, 500, flowrate_unit="uL/Min"),
+        np.testing.assert_allclose(estimate_column_deadtime(150, 2.1, 500, flow_rate_unit="uL/Min"),
                                    0.519540885087412)
-        np.testing.assert_allclose(estimate_column_deadtime(150, 2.1, 0.25, flowrate_unit="mL/Min"),
+        np.testing.assert_allclose(estimate_column_deadtime(150, 2.1, 0.25, flow_rate_unit="mL/Min"),
                                    1.03908177017482)
-        np.testing.assert_allclose(estimate_column_deadtime(150, 2.1, 250, flowrate_unit="uL/Min"),
+        np.testing.assert_allclose(estimate_column_deadtime(150, 2.1, 250, flow_rate_unit="uL/Min"),
                                    1.03908177017482)
-        np.testing.assert_allclose(estimate_column_deadtime(100, 2.1, 0.3, flowrate_unit="mL/Min"),
+        np.testing.assert_allclose(estimate_column_deadtime(100, 2.1, 0.3, flow_rate_unit="mL/Min"),
                                    0.577267650097125)
-        np.testing.assert_allclose(estimate_column_deadtime(100, 2.1, 300, flowrate_unit="uL/Min"),
+        np.testing.assert_allclose(estimate_column_deadtime(100, 2.1, 300, flow_rate_unit="uL/Min"),
                                    0.577267650097125)
 
 
