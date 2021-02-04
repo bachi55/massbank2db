@@ -25,14 +25,14 @@
 ####
 import re
 
-from typing import Union, List
+from typing import Union, List, Optional, Callable, Tuple
 
 
-def _compile_regex(regex: Union[str, List[str]]) -> Union[re.Pattern, List[re.Pattern]]:
+def _compile_regex(regex: Union[str, List[str]], *args) -> Union[re.Pattern, List[re.Pattern]]:
     if isinstance(regex, str):
-        return re.compile(regex)
+        return re.compile(regex, *args)
     elif isinstance(regex, list):
-        return [re.compile(rx) for rx in regex]
+        return [re.compile(rx, *args) for rx in regex]
     else:
         raise ValueError("Invalid input. Regular expressions need to be provided as list[str] or str.")
 
@@ -54,12 +54,12 @@ def get_meta_regex(compile=True) -> dict:
 
             list of re.Pattern, pre-compiled regular expressions to extract the information
     """
-    regex = {'accession':    ['^ACCESSION:\s+(.*)$'],
-             'deprecated':   ['^DEPRECATED:\s+(.*)$'],
-             'copyright':    ['^COPYRIGHT:\s+(.*)'],
-             'origin':       ['^origin(?:=|:)(.*)$'],
-             'record_title': ['^RECORD_TITLE:\s+(.*)$'],
-             'license':      ['^LICENSE:\s+(.*)$']}
+    regex = {'accession':    [r'^ACCESSION:\s+(.*)$'],
+             'deprecated':   [r'^DEPRECATED:\s+(.*)$'],
+             'copyright':    [r'^COPYRIGHT:\s+(.*)'],
+             'origin':       [r'^origin(?:=|:)(.*)$'],
+             'record_title': [r'^RECORD_TITLE:\s+(.*)$'],
+             'license':      [r'^LICENSE:\s+(.*)$']}
 
     if compile:
         regex = {k: _compile_regex(v) for k, v in regex.items()}
@@ -84,9 +84,9 @@ def get_ms_regex(compile=True) -> dict:
 
             list of re.Pattern, pre-compiled regular expressions to extract the information
     """
-    regex = {'precursor_mz':    ['^MS\$FOCUSED_ION:\s+PRECURSOR_M/Z\s+(\d*[.,]?\d*)$'],
-             'precursor_type':  ['^MS\$FOCUSED_ION:\s+PRECURSOR_TYPE\s+(.*)$'],
-             'base_peak':       ['^MS\$FOCUSED_ION:\s+BASE_PEAK\s+(\d*[.,]?\d*)$']}
+    regex = {'precursor_mz':    [r'^MS\$FOCUSED_ION:\s+PRECURSOR_M/Z\s+(\d*[.,]?\d*)$'],
+             'precursor_type':  [r'^MS\$FOCUSED_ION:\s+PRECURSOR_TYPE\s+(.*)$'],
+             'base_peak':       [r'^MS\$FOCUSED_ION:\s+BASE_PEAK\s+(\d*[.,]?\d*)$']}
 
     if compile:
         regex = {k: _compile_regex(v) for k, v in regex.items()}
@@ -113,21 +113,21 @@ def get_CH_regex(compile=True) -> dict:
             list of re.Pattern, pre-compiled regular expressions to extract the information
     """
     regex = {
-        "name":              ['^CH\$NAME:\s+(.*)$'],
-        "molecular_formula": ['^CH\$FORMULA:\s+(.*)$'],
-        "molecular_weight":  ['^CH\$MOLECULAR_WEIGHT:\s+(.*)$'],
+        "name":              [r'^CH\$NAME:\s+(.*)$'],
+        "molecular_formula": [r'^CH\$FORMULA:\s+(.*)$'],
+        "molecular_weight":  [r'^CH\$MOLECULAR_WEIGHT:\s+(.*)$'],
         # As PubChem ID we consider only the CIDs (not SIDs!)
-        "pubchem_id":        ['^CH\$LINK:\s+PUBCHEM\s+CID:(\d+)$',
-                              '^CH\$LINK:\s+PUBCHEM\s+CID:(\d+)\s+SID:\d+$',
-                              '^CH\$LINK:\s+PUBCHEM\s+SID:\d+\s+CID:(\d+)$'],
+        "pubchem_id":        [r'^CH\$LINK:\s+PUBCHEM\s+CID:(\d+)$',
+                              r'^CH\$LINK:\s+PUBCHEM\s+CID:(\d+)\s+SID:\d+$',
+                              r'^CH\$LINK:\s+PUBCHEM\s+SID:\d+\s+CID:(\d+)$'],
         # Massbank documentation states, that the exact mass field stores the 'monoisotopic mass'
         # https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#224-chexact_mass
-        "monoisotopic_mass": ['^CH\$EXACT_MASS:\s+(.*)$'],
+        "monoisotopic_mass": [r'^CH\$EXACT_MASS:\s+(.*)$'],
         # MassBank documentation states, that the SMILES strings correspond to isomeric smiles:
         # https://github.com/MassBank/MassBank-web/blob/main/Documentation/MassBankRecordFormat.md#225-chsmiles
-        "smiles_iso":        ['^CH\$SMILES:\s+(.*)$'],
-        "inchikey":          ['^CH\$LINK:\s+INCHIKEY\s+(.*)$'],
-        "inchi":             ['^CH\$IUPAC:\s+(.*)$']
+        "smiles_iso":        [r'^CH\$SMILES:\s+(.*)$'],
+        "inchikey":          [r'^CH\$LINK:\s+INCHIKEY\s+(.*)$'],
+        "inchi":             [r'^CH\$IUPAC:\s+(.*)$']
     }
 
     if compile:
@@ -153,25 +153,25 @@ def get_AC_regex(compile=True) -> dict:
 
             list of re.Pattern, pre-compiled regular expressions to extract the information
     """
-    regex = {'instrument_type':     ['^AC\$INSTRUMENT_TYPE:\s+(.*)$'],
-             'instrument':          ['^AC\$INSTRUMENT:\s+(.*)$'],
+    regex = {'instrument_type':     [r'^AC\$INSTRUMENT_TYPE:\s+(.*)$'],
+             'instrument':          [r'^AC\$INSTRUMENT:\s+(.*)$'],
              # Mass Spectrometry
-             'collision_energy':    ['^AC\$MASS_SPECTROMETRY:\s+COLLISION_ENERGY\s+(.*)$'],
-             'ms_type':             ['^AC\$MASS_SPECTROMETRY:\s+MS_TYPE\s+(MS\d*)$'],
-             'resolution':          ['^AC\$MASS_SPECTROMETRY:\s+RESOLUTION\s+(.*)$'],
-             'ion_mode':            ['^AC\$MASS_SPECTROMETRY:\s+ION_MODE\s+(.*)$'],
-             'fragmentation_mode':  ['^AC\$MASS_SPECTROMETRY:\s+FRAGMENTATION_MODE\s+(.*)$'],
-             'mass_accuracy':       ['^AC\$MASS_SPECTROMETRY:\s+ACCURACY\s+(.*)$'],
-             'mass_error':          ['^AC\$MASS_SPECTROMETRY:\s+ERROR\s+(.*)$'],
+             'collision_energy':    [r'^AC\$MASS_SPECTROMETRY:\s+COLLISION_ENERGY\s+(.*)$'],
+             'ms_type':             [r'^AC\$MASS_SPECTROMETRY:\s+MS_TYPE\s+(MS\d*)$'],
+             'resolution':          [r'^AC\$MASS_SPECTROMETRY:\s+RESOLUTION\s+(.*)$'],
+             'ion_mode':            [r'^AC\$MASS_SPECTROMETRY:\s+ION_MODE\s+(.*)$'],
+             'fragmentation_mode':  [r'^AC\$MASS_SPECTROMETRY:\s+FRAGMENTATION_MODE\s+(.*)$'],
+             'mass_accuracy':       [r'^AC\$MASS_SPECTROMETRY:\s+ACCURACY\s+(.*)$'],
+             'mass_error':          [r'^AC\$MASS_SPECTROMETRY:\s+ERROR\s+(.*)$'],
              # Chromatography
-             'column_name':         ['^AC\$CHROMATOGRAPHY:\s+COLUMN.*NAME\s(.*)$'],
-             'flow_gradient':       ['^AC\$CHROMATOGRAPHY:\s+FLOW.*GRADIENT\s(.*)$'],
-             'flow_rate':           ['^AC\$CHROMATOGRAPHY:\s+FLOW.*RATE\s(.*)$'],
-             'retention_time':      ['^AC\$CHROMATOGRAPHY:\s+RETENTION.*TIME\s+(\d+[.,]?\d*)\s*($|min|sec|s|m)'],
-             'solvent_A':           ['^AC\$CHROMATOGRAPHY:\s+SOLVENT\sA\s(.*)$'],
-             'solvent_B':           ['^AC\$CHROMATOGRAPHY:\s+SOLVENT\sB\s(.*)$'],
-             'solvent':             ['^AC\$CHROMATOGRAPHY:\s+SOLVENT\s(.*)$'],
-             'column_temperature':  ['^AC\$CHROMATOGRAPHY:\s+COLUMN.*TEMPERATURE\s(.*)$']}
+             'column_name':         [r'^AC\$CHROMATOGRAPHY:\s+COLUMN.*NAME\s(.*)$'],
+             'flow_gradient':       [r'^AC\$CHROMATOGRAPHY:\s+FLOW.*GRADIENT\s(.*)$'],
+             'flow_rate':           [r'^AC\$CHROMATOGRAPHY:\s+FLOW.*RATE\s(.*)$'],
+             'retention_time':      [r'^AC\$CHROMATOGRAPHY:\s+RETENTION.*TIME\s+(\d+[.,]?\d*)\s*($|min|sec|s|m)'],
+             'solvent_A':           [r'^AC\$CHROMATOGRAPHY:\s+SOLVENT\sA\s(.*)$'],
+             'solvent_B':           [r'^AC\$CHROMATOGRAPHY:\s+SOLVENT\sB\s(.*)$'],
+             'solvent':             [r'^AC\$CHROMATOGRAPHY:\s+SOLVENT\s(.*)$'],
+             'column_temperature':  [r'^AC\$CHROMATOGRAPHY:\s+COLUMN.*TEMPERATURE\s(.*)$']}
 
     if compile:
         regex = {k: _compile_regex(v) for k, v in regex.items()}
@@ -179,22 +179,43 @@ def get_AC_regex(compile=True) -> dict:
     return regex
 
 
-def extract_information_to_calculate_column_deadtime(column_name: str, flow_rate: str):
+def parse_column_name(column_name: str) -> Tuple[Union[None, Tuple[float, str]], Union[None, Tuple[float, str]]]:
     """
+    :param column_name: string, column name provided in massbank
 
-    :param column_name:
-    :param flow_rate:
     :return:
     """
+
     diameter = None
     length = None
-    flow_rate = None
 
-    # Regular expressions to extract the column length and diameter
+    # --------------------------------------------------------
+    # Extract information about the column length and diameter
+    # --------------------------------------------------------
     for regex in _compile_regex([
-        "(?P<diameter_value>\d.\d|\d)\s?(?P<diameter_unit>|mm)\s?[x\*]\s?(?P<length_value>[\d]{2,3})\s?(?P<length_unit>mm)",
-        "(?P<length_value>[\d]{2,3})\s?(?P<length_unit>|mm)\s?[x\*]\s?(?P<diameter_value>\d.\d|\d)\s?(?P<diameter_unit>mm)"
-    ]):
+        r"""
+        (?P<diameter_value>\d.\d|\d)    # Match diameter values like '1.7' or '2'
+        \s?                             # Sometime we need to skip a whitespace
+        (?P<diameter_unit>|mm)          # Match diameter units like '' or 'mm'
+        \s?                             # 
+        [x\*]                           # Diameter x Length or vice versa ('*' and 'x' are used)
+        \s?                             # 
+        (?P<length_value>[\d]{2,3})     # Match length values like 50 or 120 (only two- and three-digit values)
+        \s?                             #
+        (?P<length_unit>mm)             # Match length units like 'mm' (needs to be given if length is last one)
+        """,
+        r"""
+        (?P<length_value>[\d]{2,3})     # Match length values like 50 or 120 (only two- and three-digit values)
+        \s?                             # 
+        (?P<length_unit>|mm)            # Match length units like '' or 'mm'
+        \s?                             # 
+        [x\*]                           # Length x Diameter or vice versa ('*' and 'x' are used)
+        \s?                             # 
+        (?P<diameter_value>\d.\d|\d)    # Match diameter values like '1.7' or '2'
+        \s?                             #
+        (?P<diameter_unit>mm)           # Match diameter units like 'mm' (needs to be given if diameter is last one)
+        """
+    ], re.VERBOSE):
         match = regex.search(column_name)
         if match:
             diameter = (float(match.group("diameter_value")), match.group("diameter_unit"))
@@ -202,7 +223,58 @@ def extract_information_to_calculate_column_deadtime(column_name: str, flow_rate
 
             break
 
-    return diameter, length, flow_rate
+    return diameter, length
+
+
+def parse_flow_rate_string(flow_rate_str: str, aggregate_flow_rates: Optional[Callable[[List[float]], float]] = None) \
+        -> Optional[Tuple[Union[List[float], float], str]]:
+    """
+    :param flow_rate_str:
+    :param aggregate_flow_rates:
+    :return:
+    """
+    # ---------------------------------------
+    # Extract information about the flow rate
+    # ---------------------------------------
+    _fr_vals, _fr_units = [], []
+    for regex in _compile_regex([
+        r"""
+        (?P<flowrate_value>\d{3})           # Matches three digit flow rates like '250' or '300'
+        \s?                                 #
+        (?P<flowrate_unit>u[Ll]\s?\/\s?min) # Matches flow rate units like 'uL/min' or 'ul / min'
+        """,
+        r"""
+        (?P<flowrate_value>0.\d+)                           # Matches flow rates like '0.10', '0.25' or '0.2'
+        \s?                                                 #
+        (?P<flowrate_unit>m[Ll]\s?\/\s?min|m[Ll]\smin-1)    # Matches flow rate units like 'ml/ min' or 'mL min-1'
+        """
+    ], re.VERBOSE):
+        for match in regex.finditer(flow_rate_str):
+            _fr_vals.append(float(match.group("flowrate_value")))
+            _fr_units.append(
+                match.group("flowrate_unit")
+                    .replace("min-1", "/min")       # bring things like min-1 --> /min
+                    .replace(" ", "")               # remove white-spaces
+            )
+
+            if _fr_units[-1] != _fr_units[0]:
+                print("All flow-rate units must be equal. Got: {} != {}.".format(_fr_units[-1], _fr_units[0]))
+                return None
+
+        if len(_fr_vals) > 0:
+            break
+
+    if aggregate_flow_rates is not None:
+        _fr_vals = [aggregate_flow_rates(_fr_vals)]
+
+    if len(_fr_vals) == 1:
+        flow_rate = (_fr_vals[0], _fr_units[0])
+    elif len(_fr_vals) > 1:
+        flow_rate = (_fr_vals, _fr_units[0])
+    else:
+        flow_rate = None
+
+    return flow_rate
 
 
 def _run_parser():
@@ -222,8 +294,10 @@ def _run_parser():
 
 def _run_extraction():
     column_name = "XBridge C18 3.5um, 2.1x50mm, Waters"
+    flow_rate = "200 uL/min at 0-3 min, 400 uL/min at 14 min, 480 uL/min at 16-19 min, 200 uL/min at 19.1-20 min"
 
-    print(extract_information_to_calculate_column_deadtime(column_name, None))
+    print(parse_column_name(column_name))
+    print(parse_flow_rate_string(flow_rate))
 
 
 if __name__ == "__main__":

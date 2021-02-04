@@ -31,9 +31,9 @@ from massbank2db.utils import estimate_column_deadtime
 
 class TestColumnDeadtimeEstimation(unittest.TestCase):
     def test_bordercases(self):
-        self.assertEqual(estimate_column_deadtime(np.nan, 1, 1), None)
-        self.assertEqual(estimate_column_deadtime(1, np.nan, 1), None)
-        self.assertEqual(estimate_column_deadtime(1, 1, np.nan), None)
+        self.assertEqual(estimate_column_deadtime(None, 1, 1), None)
+        self.assertEqual(estimate_column_deadtime(1, None, 1), None)
+        self.assertEqual(estimate_column_deadtime(1, 1, None), None)
 
     def test_correctness(self):
         np.testing.assert_allclose(estimate_column_deadtime(150, 2.1, 0.5, flowrate_unit="mL/Min"),

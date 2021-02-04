@@ -23,8 +23,9 @@
 # SOFTWARE.
 #
 ####
-
 import numpy as np
+
+from typing import Optional
 
 # TODO: Currently unsupported precursor-types
 #  '[M+CH3COOH-H]-': None,
@@ -86,7 +87,7 @@ def get_mass_error_in_ppm(monoisotopic_mass, precursor_mz, precursor_type):
     return (abs(theoretical_precursor_mz - precursor_mz) * 1e6) / theoretical_precursor_mz
 
 
-def estimate_column_deadtime(length, diameter, flowrate, flowrate_unit="uL/min"):
+def estimate_column_deadtime(length, diameter, flowrate, flowrate_unit="uL/min") -> Optional[float]:
     """
     Estimates the column's deadtime given it's length, diameter and flowrate:
 
@@ -98,7 +99,7 @@ def estimate_column_deadtime(length, diameter, flowrate, flowrate_unit="uL/min")
     :param flowrate_unit: string, defining the unit of the given flowrate
     :return: scalar, estimated column deadtime or None if for any of the required input parameters np.isnan is True.
     """
-    if np.isnan(length) or np.isnan(diameter) or np.isnan(flowrate):
+    if length is None or diameter is None or flowrate is None:
         return None
 
     if flowrate_unit.lower() == "ul/min":
