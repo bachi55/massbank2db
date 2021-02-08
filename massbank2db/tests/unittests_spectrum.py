@@ -67,7 +67,7 @@ class TestMBSpectrumParsing(unittest.TestCase):
                  (199.0315, 5538869.4),
                  (201.0474, 7384944.1)]
         spec = MBSpectrum("./example_massbank_records/EQ308406.txt")
-        self.assertEqual(peaks, spec.get_peak_list_as_tuples())
+        self.assertEqual(peaks, list(spec.get_peak_list_as_tuples()))
 
         # Spectrum 2
         peaks = [
@@ -81,13 +81,75 @@ class TestMBSpectrumParsing(unittest.TestCase):
             (160.040200, 10392.000000),
             (161.043200, 1399.000000)]
         spec = MBSpectrum("./example_massbank_records/FIO00665.txt")
-        self.assertEqual(peaks, spec.get_peak_list_as_tuples())
+        self.assertEqual(peaks, list(spec.get_peak_list_as_tuples()))
 
 
 class TestMBSpectrumToToolFormat(unittest.TestCase):
+    def test_to_sirius(self):
+        # Spectrum 1 -------------------
+        spec = MBSpectrum("./example_massbank_records/FIO00665.txt")
+        out = spec.to_sirius_format()
+        self.assertIn("FIO00665.ms", out)
+        self.assertIn("FIO00665.tsv", out)
+        self.assertIsNone(out["FIO00665.tsv"])
+        self.assertIn(">profile qtof", out["FIO00665.ms"])
+
+        # check fragmentation peaks
+        tmp = out["FIO00665.ms"].split("\n")
+        for idx, _peak in enumerate(spec.get_peak_list_as_tuples(), start=tmp.index(">ms2merged") + 1):
+            _mz, _int = tmp[idx].split(" ")
+            self.assertEqual(_peak, (float(_mz), float(_int)))
+
+        # Spectrum 2 -------------------
+        spec = MBSpectrum("./example_massbank_records/EQ308406.txt")
+        out = spec.to_sirius_format()
+        self.assertIn("EQ308406.ms", out)
+        self.assertIn("EQ308406.tsv", out)
+        self.assertIsNone(out["EQ308406.tsv"])
+        self.assertIn(">profile orbitrap", out["EQ308406.ms"])
+
+        # check fragmentation peaks
+        tmp = out["EQ308406.ms"].split("\n")
+        for idx, _peak in enumerate(spec.get_peak_list_as_tuples(), start=tmp.index(">ms2merged") + 1):
+            _mz, _int = tmp[idx].split(" ")
+            self.assertEqual(_peak, (float(_mz), float(_int)))
+
+        # Spectrum 3 --------------------
+        spectra = []
+        acc = []
+        spec_cnt = 0
+        for mb_fn in glob.iglob(os.path.join("example_massbank_records", "EA0004[01][0-9].txt")):
+            spectra.append(MBSpectrum(mb_fn))
+            acc.append(spectra[-1].get("accession"))
+            spec_cnt += 1
+
+        self.assertIn(
+            ">ms2merged",
+            MBSpectrum.merge_spectra(spectra, merge_peak_lists=True).to_sirius_format()["EA33002987.ms"])
+
+        self.assertEqual(
+            spec_cnt,
+            MBSpectrum.merge_spectra(spectra, merge_peak_lists=False).to_sirius_format()["EA33002987.ms"].count(">collision"))
+
+    def test_to_sirius__gt_molecular_formula(self):
+        acc = "EQ308406"
+        self.assertIn("#formula",
+                      MBSpectrum("./example_massbank_records/%s.txt" % acc).to_sirius_format()[acc + ".ms"])
+        self.assertNotIn(">formula",
+                         MBSpectrum("./example_massbank_records/%s.txt" % acc).to_sirius_format()[acc + ".ms"])
+        self.assertNotIn("#formula",
+                         MBSpectrum("./example_massbank_records/%s.txt" % acc)
+                            .to_sirius_format(add_gt_molecular_formula=True)[acc + ".ms"])
+        self.assertIn(">formula",
+                      MBSpectrum("./example_massbank_records/%s.txt" % acc)
+                         .to_sirius_format(add_gt_molecular_formula=True)[acc + ".ms"])
+
+    def test_to_sirius__custom_candidate_db(self):
+        self.skipTest("TODO")
+
     def test_to_metfrag(self):
         # Spectrum 1 --------------------
-        out = MBSpectrum("./example_massbank_records/FIO00665.txt")._to_metfrag_format(
+        out = MBSpectrum("./example_massbank_records/FIO00665.txt").to_metfrag_format(
             **{"MetFragScoreWeights": [0.8, 0.2],
                "MetFragScoreTypes": ["FragmenterScore", "PubChemNumberPatents"],
                "LocalDatabasePath": "/path/to/db",
@@ -105,7 +167,7 @@ class TestMBSpectrumToToolFormat(unittest.TestCase):
         self.assertIn("IsPositiveIonMode=False\n", out["FIO00665.conf"])
 
         # Spectrum 2 --------------------
-        out = MBSpectrum("./example_massbank_records/EQ308406.txt")._to_metfrag_format(
+        out = MBSpectrum("./example_massbank_records/EQ308406.txt").to_metfrag_format(
             **{"MetFragScoreWeights": [1.0],
                "MetFragScoreTypes": ["FragmenterScore"],
                "LocalDatabasePath": "/path/to/db",
@@ -130,7 +192,7 @@ class TestMBSpectrumToToolFormat(unittest.TestCase):
             acc.append(spectra[-1].get("accession"))
 
         merged_spectrum = MBSpectrum.merge_spectra(spectra)
-        out = merged_spectrum._to_metfrag_format(
+        out = merged_spectrum.to_metfrag_format(
             **{"MetFragScoreWeights": [1.0],
                "MetFragScoreTypes": ["FragmenterScore"],
                "LocalDatabasePath": "/path/to/db",
@@ -156,10 +218,10 @@ class TestMBSpectrumMerging(unittest.TestCase):
         spec = MBSpectrum(mb_fn)
         spectra = [spec]
         acc_ref = [os.path.basename(mb_fn).split(".")[0]]
-        rt_ref = [spec.get("retention_time")]
-        precmz_ref = [spec.get("precursor_mz")]
-        recordtitle_ref = [spec.get("record_title")]
-        ce_ref = [spec.get("collision_energy")]
+        rt_ref = spec.get("retention_time")
+        precmz_ref = spec.get("precursor_mz")
+        recordtitle_ref = spec.get("record_title")
+        ce_ref = spec.get("collision_energy")
 
         # -------------------
         # WITH RT AGGREGATION
@@ -171,11 +233,10 @@ class TestMBSpectrumMerging(unittest.TestCase):
         self.assertEqual("FIO", merged_spectrum.get("accession")[:3])
         self.assertEqual(MBSpectrum._get_new_accession_id(merged_spectrum.get("original_accessions")),
                          merged_spectrum.get("accession"))
-        self.assertEqual(None, merged_spectrum.get("retention_time_unit"))
-        self.assertEqual(None, merged_spectrum.get("retention_time"))
-        self.assertEqual(precmz_ref[0], merged_spectrum.get("precursor_mz"))
-        self.assertEqual(recordtitle_ref[0], merged_spectrum.get("record_title"))
-        self.assertEqual(ce_ref[0], merged_spectrum.get("collision_energy"))
+        self.assertEqual(rt_ref, merged_spectrum.get("retention_time"))
+        self.assertEqual(precmz_ref, merged_spectrum.get("precursor_mz"))
+        self.assertEqual(recordtitle_ref, merged_spectrum.get("record_title"))
+        self.assertEqual(ce_ref, merged_spectrum.get("collision_energy"))
 
     def test_metainformation_merging__EAX000401(self):
         # Load the list of spectra to merge: EA0004[01][0-9].txt --> EAX000401.txt
@@ -198,7 +259,7 @@ class TestMBSpectrumMerging(unittest.TestCase):
         # -------------------
         # WITH RT AGGREGATION
         # -------------------
-        merged_spectrum = MBSpectrum.merge_spectra(spectra, rt_agg_fun=np.min)  # type: MBSpectrum
+        merged_spectrum = MBSpectrum.merge_spectra(spectra, rt_agg_fun=np.mean)  # type: MBSpectrum
 
         self.assertEqual("OUSYWCQYMPDAEO-UHFFFAOYSA-N", merged_spectrum.get("inchikey"))
         self.assertEqual(acc_ref, merged_spectrum.get("original_accessions"))
@@ -206,7 +267,7 @@ class TestMBSpectrumMerging(unittest.TestCase):
         self.assertEqual(MBSpectrum._get_new_accession_id(merged_spectrum.get("original_accessions")),
                          merged_spectrum.get("accession"))
         self.assertEqual("min", merged_spectrum.get("retention_time_unit"))
-        self.assertEqual(np.min(rt_ref), merged_spectrum.get("retention_time"))
+        self.assertEqual(np.mean(rt_ref), merged_spectrum.get("retention_time"))
         self.assertEqual(precmz_ref[0], merged_spectrum.get("precursor_mz"))
         self.assertEqual(recordtitle_ref, merged_spectrum.get("record_title"))
         self.assertEqual(ce_ref, merged_spectrum.get("collision_energy"))

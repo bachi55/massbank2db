@@ -469,15 +469,21 @@ class MassbankDB(object):
             rows = self._mb_conn.execute("SELECT GROUP_CONCAT(accession), dataset, molecule, "
                                          "       GROUP_CONCAT(precursor_mz), precursor_type, "
                                          "       GROUP_CONCAT(collision_energy), ms_type, "
-                                         "       GROUP_CONCAT(resolution), fragmentation_mode "
+                                         "       GROUP_CONCAT(resolution), spectra_meta.fragmentation_mode, "
+                                         "       d.instrument_type, d.instrument "
                                          "    FROM spectra_meta "
+                                         "    INNER JOIN datasets d ON d.name = spectra_meta.dataset"
                                          "    WHERE dataset IS ? "
-                                         "    GROUP BY molecule, precursor_type, fragmentation_mode, ms_type",
+                                         "    GROUP BY molecule, precursor_type, spectra_meta.fragmentation_mode, ms_type",
                                          (dataset, ))
         else:
-            rows = self._mb_conn.execute("SELECT accession, dataset, molecule, precursor_mz, precursor_type, "
-                                         "       collision_energy, ms_type, resolution, fragmentation_mode "
+            rows = self._mb_conn.execute("SELECT accession, dataset, molecule,"
+                                         "       precursor_mz, precursor_type, "
+                                         "       collision_energy, ms_type,"
+                                         "       resolution, spectra_meta.fragmentation_mode, "
+                                         "       d.instrument_type, d.instrument "
                                          "   FROM spectra_meta "
+                                         "   INNER JOIN datasets d ON d.name = spectra_meta.dataset"
                                          "   WHERE dataset IS ?", (dataset, ))
 
         # Open a connection to a local PubChemDB if needed and provided
@@ -496,7 +502,7 @@ class MassbankDB(object):
             # Load compound information
             # -------------------------
             # Note: This is equal for all spectra, if grouped, as the compound is a grouping criteria.
-            mol = self._mb_conn.execute("SELECT * FROM molecules WHERE cid = ?", (row[2],)).fetchall()[0]
+            mol = self._mb_conn.execute("SELECT * FROM molecules WHERE cid = ?", (row[2],)).fetchone()
 
             # --------------------------
             # Load candidate information
@@ -529,6 +535,8 @@ class MassbankDB(object):
                 specs[-1].set("ms_type", row[6])
                 specs[-1].set("resolution", row[7])
                 specs[-1].set("fragmentation_mode", row[8])
+                specs[-1].set("instrument_type", row[9])
+                specs[-1].set("instrument", row[10])
 
                 # -------------------
                 # Retention time data
@@ -626,16 +634,21 @@ class MassbankDB(object):
                                   "   WHERE name IS ?", (_num_spec, _num_cmp, dataset_identifier))
 
     @staticmethod
-    def _cands_to_metfrag_format(cands):
-        cands_out = cands[["exact_mass", "InChI", "cid", "InChIKey", "molecular_formula", "SMILES_ISO"]]
+    def cands_to_metfrag_format(cands, smiles_column="SMILES_ISO"):
+        cands_out = cands.loc[:, ["monoisotopic_mass", "InChI", "cid", "InChIKey", "molecular_formula", smiles_column]]
         cands_out.assign(InChIKey1=cands_out["InChIKey"].apply(lambda _r: _r.split("-")[0]))
         cands_out.assign(InChIKey2=cands_out["InChIKey"].apply(lambda _r: _r.split("-")[1]))
         cands_out = cands_out.rename({"cid": "Identifier",
                                       "molecular_formula": "MolecularFormula",
-                                      "exact_mass": "MonoisotopicMass",
-                                      "SMILES_ISO": "SMILES"},
+                                      "monoisotopic_mass": "MonoisotopicMass",
+                                      smiles_column: "SMILES"},
                                      axis=1)
-        return cands_out.to_csv(sep="|", index=False)
+        return cands_out.to_csv(None, sep="|", index=False)
+
+    @staticmethod
+    def cands_to_sirius_format(cands, smiles_column="SMILES_ISO"):
+        return cands.loc[:, [smiles_column, "cid", "InChiKey", "molecular_formula"]] \
+            .to_csv(None, sep="\t", index=False, header=False)
 
     @staticmethod
     def _get_temporal_database(file_pth=":memory:"):
