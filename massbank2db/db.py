@@ -406,7 +406,7 @@ class MassbankDB(object):
                                    spectrum.get("copyright"),
                                    spectrum.get("license"),
                                    spectrum.get("column_name"),
-                                   None, # TODO: How to determine HILIC or RP?
+                                   None,  # TODO: How to determine HILIC or RP?
                                    spectrum.get("column_temperature"),
                                    spectrum.get("flow_gradient"),
                                    spectrum.get("flow_rate"),
@@ -559,7 +559,8 @@ class MassbankDB(object):
                 # --------------
                 # TODO: Remove loop here
                 peaks = self._mb_conn.execute("SELECT mz, intensity FROM spectra_peaks "
-                                              "    WHERE spectrum IS ? ORDER BY mz", (acc, ))
+                                              "    WHERE spectrum IS ? "
+                                              "    ORDER BY mz", (acc, ))
                 specs[-1]._mz, specs[-1]._int = [], []
                 for peak in peaks:
                     specs[-1]._mz.append(peak[0])

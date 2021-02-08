@@ -122,21 +122,18 @@ class TestParsingOfColumnInformation(unittest.TestCase):
             self.assertTrue(np.isscalar(_val))
             self.assertEqual(flow_rates[idx][1], _unit)
 
-    def test_flow_rate_parsing__TODO(self):
+    def test_flow_rate_parsing__currently_not_supported(self):
         self.skipTest("TODO: Cannot handle different units when multiple flow rates are reported.")
 
-        flow_rate_strs = ["0.3 ml/min at 0 min, 200 ul/min"]
-        flow_rates = [None]
+        flow_rate_strs = ["0.3 ml/min at 0 min, 200 ul/min",
+                          "0.3 ml/min at 0 min, 200 ul/min at 5 min",
+                          "200-320 (0-1 min); 200 (1-38 min) ul/min"]
+        flow_rates = [None, None, None]
 
         assert len(flow_rates) == len(flow_rate_strs)
 
         for idx, frstr in enumerate(flow_rate_strs):
             self.assertEqual(flow_rates[idx], parse_flow_rate_string(frstr))
-
-    def test_flow_rate_parsing__currently_not_handled(self):
-        self.skipTest("TODO")
-
-        "200-320 (0-1 min); 200 (1-38 min) ul/min'"
 
 
 class TestRegularExpressions(unittest.TestCase):
