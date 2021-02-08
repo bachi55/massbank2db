@@ -92,7 +92,7 @@ class MassbankDB(object):
         """
         with self._mb_conn:
             if reset:
-                for table_name in ["spectra_peaks", "spectra_raw_rts", "spectra_meta", "datasets", "molecules"]:
+                for table_name in ["spectra_peaks", "spectra_rts", "spectra_meta", "datasets", "molecules"]:
                     self._mb_conn.execute("DROP TABLE IF EXISTS %s" % table_name)
 
             # Molecules Table
@@ -160,10 +160,9 @@ class MassbankDB(object):
 
             # Spectra Retention Time information table
             self._mb_conn.execute(
-                "CREATE TABLE IF NOT EXISTS spectra_raw_rts( \
+                "CREATE TABLE IF NOT EXISTS spectra_rts( \
                     spectrum            VARCHAR NOT NULL, \
                     retention_time      FLOAT NOT NULL, \
-                    retention_time_unit VARCHAR DEFAULT 'min', \
                  FOREIGN KEY(spectrum) REFERENCES spectra_meta(accession) ON DELETE CASCADE)"
             )
 
@@ -187,9 +186,10 @@ class MassbankDB(object):
             self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_monoisotopic_mass_index ON molecules(monoisotopic_mass)")
             self._mb_conn.execute("CREATE INDEX IF NOT EXISTS molecules_mf_index                ON molecules(molecular_formula)")
 
-            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS spectra_meta_dataset_index           ON spectra_meta(dataset)")
-            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS spectra_raw_rts_spectrum_index       ON spectra_raw_rts(spectrum)")
-            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS spectra_raw_rts_retention_time_index ON spectra_raw_rts(retention_time)")
+            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS spectra_meta_dataset_index ON spectra_meta(dataset)")
+
+            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS spectra_rts_spectrum_index       ON spectra_rts(spectrum)")
+            self._mb_conn.execute("CREATE INDEX IF NOT EXISTS spectra_rts_retention_time_index ON spectra_rts(retention_time)")
 
             self._mb_conn.execute("CREATE INDEX IF NOT EXISTS spectra_peaks_spectrum_index ON spectra_peaks(spectrum)")
 
@@ -451,23 +451,18 @@ class MassbankDB(object):
         # =====================
         # Insert Retention Time
         # =====================
-        if spectrum.get("retention_time_unit") == '':
-            if spectrum.get("retention_time") > 100:
-                LOGGER.warning("(%s) Retention time unit default (=min) does not look reasonable: rt=%.3f"
-                               % (spectrum.get("accession"), spectrum.get("retention_time")))
+        _rt = spectrum.get("retention_time")
+        _rt_unit = spectrum.get("retention_time_unit")
 
-            self._mb_conn.execute("INSERT INTO spectra_raw_rts (spectrum, retention_time) VALUES(?, ?)",
-                                  (
-                                    spectrum.get("accession"),
-                                    spectrum.get("retention_time"),
-                                   ))
-        else:
-            self._mb_conn.execute("INSERT INTO spectra_raw_rts VALUES(?, ?, ?)",
-                                  (
-                                    spectrum.get("accession"),
-                                    spectrum.get("retention_time"),
-                                    spectrum.get("retention_time_unit")
-                                   ))
+        if _rt_unit == "sec":
+            # Convert retention times from seconds to minutes
+            _rt /= 60  # sec -> min
+        elif (_rt_unit is None) and (_rt > 100):
+            # Perform a consistency check for retention times without unit (greater than 100 is probably minutes)
+            LOGGER.warning("(%s) Retention time unit default (=min) does not look reasonable: rt=%.3f"
+                           % (spectrum.get("accession"), _rt))
+
+        self._mb_conn.execute("INSERT INTO spectra_rts VALUES(?, ?)", (spectrum.get("accession"), _rt))
 
     def iter_spectra(self, dataset, grouped=True, return_candidates=False, ppm=5, pc_dbfn=None):
         if grouped:
@@ -538,10 +533,9 @@ class MassbankDB(object):
                 # -------------------
                 # Retention time data
                 # -------------------
-                rt, rt_unit = self._mb_conn.execute("SELECT retention_time, retention_time_unit FROM spectra_raw_rts"
-                                                    "   WHERE spectrum IS ?", (acc, )).fetchall()[0]
+                rt = self._mb_conn.execute("SELECT retention_time FROM spectra_rts"
+                                           "    WHERE spectrum IS ?", (acc, )).fetchone()
                 specs[-1].set("retention_time", rt)
-                specs[-1].set("retention_time_unit", rt_unit)
 
                 # --------------------
                 # Compound information
@@ -552,7 +546,8 @@ class MassbankDB(object):
                 specs[-1].set("smiles_iso", mol[5])
                 specs[-1].set("smiles_can", mol[6])
                 specs[-1].set("exact_mass", mol[7])
-                specs[-1].set("molecular_formula", mol[8])
+                specs[-1].set("monoisotopic_mass", mol[8])
+                specs[-1].set("molecular_formula", mol[9])
 
                 # --------------
                 # Spectrum peaks
