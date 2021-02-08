@@ -24,8 +24,116 @@
 #
 ####
 import unittest
+import numpy as np
 
 from massbank2db.parser import get_AC_regex, get_CH_regex, get_meta_regex
+from massbank2db.parser import parse_column_name, parse_flow_rate_string
+
+
+class TestParsingOfColumnInformation(unittest.TestCase):
+    def test_column_dimensions_from_column_name(self):
+        column_names = [
+            "Agilent RRHD Eclipse 50 x 2 mm, 1.8 uM",
+            "Acclaim RSLC C18 2.2um, 2.1x100mm, Thermo",
+            "ACQUITY UPLC BEH Amide 1.7 um 2.1x100mm, Waters",
+            "Acclaim RSLC C18 2.2um, 2.1x100mm, Thermo",
+            "BEH C18 1.7um, 2.1x100mm, Waters",
+            "Waters Acquity BEH C18 1.7um x 2.1 x 150 mm",
+            "Kinetex C18 EVO 2.6 um, 2.1x50 mm, precolumn 2.1x5 mm, Phenomenex",
+            "Develosil C30, Nomura Chemical",
+            "XBridge C18 3.5um, 2.1x50mm, Waters",
+            "Atlantis T3 3um, 3.0x150mm, Waters with guard column",
+            "XBridge C18 3.5um, 2.1x150mm, Waters",
+            "Acquity BEH C18 1.7um, 2.1x150mm (Waters)",
+            "Symmetry C18 Column, Waters",
+            "Kinetex Evo C18 2.6 um 50x2.1 mm, Phenomenex",
+            "Acquity bridged ethyl hybrid C18 (1.7 um, 2.1 mm * 100 mm, Waters)",
+            "Acquity UPLC Peptide BEH C18 column (50*2.1 mm; 1.7 um; 130A)(Waters Co.,Milford, MA, USA)",
+            "Kinetex Core-Shell C18 2.6 um, 3.0 x 100 mm, Phenomenex",
+            "Agilent C8 Cartridge Column 2.1X30mm 3.5 micron (guard); Agilent SB-Aq 2.1x50mm 1.8 micron (analytical)"
+        ]
+        diameters = [(2, "mm"), (2.1, ""), (2.1, ""), (2.1, ""), (2.1, ""), (2.1, ""), (2.1, ""), None, (2.1, ""),
+                     (3, ""), (2.1, ""), (2.1, ""), None, (2.1, "mm"), (2.1, "mm"), (2.1, "mm"), (3.0, ""), (2.1, "")]
+        lengths = [(50, ""), (100, "mm"), (100, "mm"), (100, "mm"), (100, "mm"), (150, "mm"), (50, "mm"), None,
+                   (50, "mm"), (150, "mm"), (150, "mm"), (150, "mm"), None, (50, ""), (100, "mm"), (50, ""), (100, "mm"),
+                   (50, "mm")]
+
+        assert len(column_names) == len(diameters)
+        assert len(column_names) == len(lengths)
+        assert len(diameters) == len(lengths)
+
+        for idx, cn in enumerate(column_names):
+            dia, length = parse_column_name(cn)
+
+            self.assertEqual(diameters[idx], dia)
+            self.assertEqual(lengths[idx], length)
+
+    def test_flow_rate_parsing(self):
+        flow_rate_strs = [
+            "0.3 mL min-1",
+            "200 uL/min at 0-3 min, 400 uL/min at 14 min, 480 uL/min at 16-19 min, 200 uL/min at 19.1-20 min",
+            "560 uL / min",
+            "add 100 uL/min",
+            "200 ul/min",
+            "360 uL/min",
+            "0.20 mL/min",
+            "0.3 ml/min",
+            "0.3 ml/min at 0 min, 0.3 ml/min at 10 min, 0.4 ml/min at 10.1 min, 0.4 ml/min at 14.4 min, 0.3 ml/min at 14.5 min",
+            "0.20 mmL/min",
+            "200 mL/min"]
+        flow_rates = [(0.3, "mL/min"),
+                      ([200, 400, 480, 200], "uL/min"),
+                      (560, "uL/min"),
+                      (100, "uL/min"),
+                      (200, "ul/min"),
+                      (360, "uL/min"),
+                      (0.2, "mL/min"),
+                      (0.3, "ml/min"),
+                      ([0.3, 0.3, 0.4, 0.4, 0.3], "ml/min"),
+                      None,
+                      None]
+
+        assert len(flow_rates) == len(flow_rate_strs)
+
+        for idx, frstr in enumerate(flow_rate_strs):
+            self.assertEqual(flow_rates[idx], parse_flow_rate_string(frstr))
+
+    def test_flow_rate_parsing__aggregation(self):
+        flow_rate_strs = [
+            "200 uL/min at 0-3 min, 400 uL/min at 14 min, 480 uL/min at 16-19 min, 200 uL/min at 19.1-20 min",
+            "0.3 ml/min",
+            "0.3 ml/min at 0 min, 0.3 ml/min at 10 min, 0.4 ml/min at 10.1 min, 0.4 ml/min at 14.4 min, 0.3 ml/min at 14.5 min"]
+        flow_rates = [([200, 400, 480, 200], "uL/min"),
+                      (0.3, "ml/min"),
+                      ([0.3, 0.3, 0.4, 0.4, 0.3], "ml/min")]
+
+        assert len(flow_rates) == len(flow_rate_strs)
+
+        for idx, frstr in enumerate(flow_rate_strs):
+            # MEAN
+            _val, _unit = parse_flow_rate_string(frstr, aggregate_flow_rates=np.mean)
+            self.assertEqual(np.mean(flow_rates[idx][0]), _val)
+            self.assertTrue(np.isscalar(_val))
+            self.assertEqual(flow_rates[idx][1], _unit)
+
+            # MIN
+            _val, _unit = parse_flow_rate_string(frstr, aggregate_flow_rates=np.min)
+            self.assertEqual(np.min(flow_rates[idx][0]), _val)
+            self.assertTrue(np.isscalar(_val))
+            self.assertEqual(flow_rates[idx][1], _unit)
+
+    def test_flow_rate_parsing__currently_not_supported(self):
+        self.skipTest("TODO: Cannot handle different units when multiple flow rates are reported.")
+
+        flow_rate_strs = ["0.3 ml/min at 0 min, 200 ul/min",
+                          "0.3 ml/min at 0 min, 200 ul/min at 5 min",
+                          "200-320 (0-1 min); 200 (1-38 min) ul/min"]
+        flow_rates = [None, None, None]
+
+        assert len(flow_rates) == len(flow_rate_strs)
+
+        for idx, frstr in enumerate(flow_rate_strs):
+            self.assertEqual(flow_rates[idx], parse_flow_rate_string(frstr))
 
 
 class TestRegularExpressions(unittest.TestCase):
