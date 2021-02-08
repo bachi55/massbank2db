@@ -262,8 +262,10 @@ class MBSpectrum(object):
                 if k == "retention_time":
                     meta_info_out["retention_time"] = float(v[0])
 
-                    if v[1] in ["min", "sec", ""]:
+                    if v[1] in ["min", "sec"]:
                         meta_info_out["retention_time_unit"] = v[1]
+                    elif v[1] == "":
+                        meta_info_out["retention_time_unit"] = None
                     elif v[1] == "s":
                         meta_info_out["retention_time_unit"] = "sec"
                     elif v[1] == "m":
