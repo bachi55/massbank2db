@@ -27,6 +27,7 @@ import unittest
 import glob
 import os
 import numpy as np
+import pandas as pd
 
 from massbank2db.spectrum import MBSpectrum
 
@@ -145,7 +146,13 @@ class TestMBSpectrumToToolFormat(unittest.TestCase):
                          .to_sirius_format(add_gt_molecular_formula=True)[acc + ".ms"])
 
     def test_to_sirius__custom_candidate_db(self):
-        self.skipTest("TODO")
+        # Spectrum 1 -------------------
+        spec = MBSpectrum("./example_massbank_records/FIO00665.txt")
+        out = spec.to_sirius_format(
+            molecular_candidates=pd.read_csv("./example_massbank_records/FIO00665.tsv", sep="\t"))
+        self.assertIn("FIO00665.ms", out)
+        self.assertIn("FIO00665.tsv", out)
+        self.assertIsNotNone(out["FIO00665.tsv"])
 
     def test_to_metfrag(self):
         # Spectrum 1 --------------------

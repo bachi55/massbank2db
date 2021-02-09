@@ -29,44 +29,62 @@ from typing import Optional
 
 # TODO: Currently unsupported precursor-types
 #  '[M+CH3COOH-H]-': None,
-#  '[M-2H2O+H]+': None,
 #  '[M-H-C6H10O5]-': None,
 #  '[M-H+CH2O2]-': None,
 #  '[M-H+C2H2O]-': None,
 #  '[M-CH3]-': None,
-#  '[M-H2O+H]+': None,
-#  '[M+H-H2O]+': None,
 #  '[M+H-NH3]+': None,
 #  '[M+H-C9H10O5]+': None,
 #  '[M-C6H10O5+H]+': None
 
+# Values are taken from:
+# https://docs.google.com/spreadsheets/d/1r4dPw1shIEy_W2BkfgPsihinwg-Nah654VlNTn8Gxo0/edit?usp=sharing
+ADDUCT_MASSES = {
+    # POSITIVE
+    '[M+H]+': 1.007276,
+    '[M-H2O+H]+': 1.007276 - 18.010565, '[M+H-H2O]+': 1.007276 - 18.010565,   # exact mass of H2O = 18.010565
+    '[M-2H2O+H]+': 1.007276 - 2 * 18.010565, '[M+H-2H2O]+': 1.007276 - 2 * 18.010565,
+    '[M+Na]+': 22.98922,
+    '[M]+': 0,
+    '[M+NH4]+': 18.03383,
+    '[M+H-NH3]+': 1.007276 - 17.026549,
+    # NEGATIVE
+    '[M-H]-': -1.007276,
+    '[M+CH3COO]-': 59.01385, '[M+CH3COOH-H]-': 59.01385,
+    '[M+CHO2]-': 44.9982, '[M+HCOO]-': 44.9982, '[M+CH2O2-H]-': 44.9982, '[M-H+CH2O2]-': 44.9982,
+    '[M]-': 0,
+    '[M-2H]-': -1.007276
+}
 
-def get_precursor_mz(exact_mass, precursor_type):
+
+def get_precursor_mz(mass, precursor_type):
     """
-    Calculate precursor mz based on exact mass and precursor type
+    Calculate precursor mz based on (exact or monoisotopic) mass and precursor type
 
-    :param exact_mass: float, exact mass of compound of interest
+    :param mass: scalar, mass of a compound, e.g. monoisotopic or exact mass.
 
-    :param precursor_type: string, precursor type, e.g. [M+H]+
+    :param precursor_type: string, precursor type, e.g. '[M+H]+'
 
-    :return: scalar, neutral mass of compound
+    :return: scalar, ion mass / precursor mz
     """
-    # Values are taken from:
-    # https://docs.google.com/spreadsheets/d/1r4dPw1shIEy_W2BkfgPsihinwg-Nah654VlNTn8Gxo0/edit?usp=sharing
-    d = {'[M+H]+': 1.007276,
-         '[M-H]-': -1.007276,
-         '[M+CH3COO]-': 59.01385, '[M+CH3COOH-H]-': 59.01385,
-         '[M+CHO2]-': 44.9982, '[M+HCOO]-': 44.9982, '[M+CH2O2-H]-': 44.9982, '[M-H+CH2O2]-': 44.9982,
-         '[M-H2O+H]+': 1.007276 - 18.010565, '[M+H-H2O]+': 1.007276 - 18.010565,
-         '[M-2H2O+H]+': 1.007276 - 2 * 18.010565,
-         '[M+Na]+': 22.98922,
-         '[M]+': 0,
-         '[M]-': 0,
-         '[M-2H]-': -1.007276,
-         '[M+NH4]+': 18.03383}
-
     try:
-        return exact_mass + d[precursor_type]
+        return mass + ADDUCT_MASSES[precursor_type]
+    except KeyError:
+        raise KeyError("Unsupported precursor-type '%s'." % precursor_type)
+
+
+def get_mass_from_ion(precursor_mz, precursor_type):
+    """
+    Calculate monoisotopic mass from a given ion mass / precursor mz based on the precursor type.
+
+    :param precursor_mz: scalar, ion mass / precursor mz
+
+    :param precursor_type: string, precursor type, e.g. '[M+H]+'
+
+    :return: scalar, monoisotopic mass of the compound
+    """
+    try:
+        return precursor_mz - ADDUCT_MASSES[precursor_type]
     except KeyError:
         raise KeyError("Unsupported precursor-type '%s'." % precursor_type)
 
@@ -110,3 +128,16 @@ def estimate_column_deadtime(length, diameter, flow_rate, flow_rate_unit="uL/min
         raise ValueError("Invalid flowrate unit: '%s'." % flow_rate_unit)
 
     return ((np.pi * (diameter / 2)**2 * length * 0.5) / 1000) / flow_rate
+
+
+def named_row_factory(cursor, row):
+    """
+    SOURCE: https://docs.python.org/3.5/library/sqlite3.html#sqlite3.Connection.row_factory
+    """
+    return {col[0]: row[idx] for idx, col in enumerate(cursor.description)}
+
+
+def get_ppm_window(mass, ppm):
+    abs_deviation = mass / 1e6 * ppm
+    return mass - abs_deviation, mass + abs_deviation
+

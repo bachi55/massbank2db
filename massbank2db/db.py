@@ -32,10 +32,11 @@ import logging
 import pandas as pd
 import numpy as np
 
-from typing import Optional, List
+from typing import Optional, List, Union
 
 import massbank2db.spectrum
-from massbank2db.utils import get_mass_error_in_ppm, estimate_column_deadtime
+from massbank2db.utils import get_mass_error_in_ppm, estimate_column_deadtime, named_row_factory, get_ppm_window
+from massbank2db.utils import get_mass_from_ion
 from massbank2db.parser import parse_column_name, parse_flow_rate_string
 
 # Setup the Loggers
@@ -143,17 +144,18 @@ class MassbankDB(object):
             #   Source: https://sqlite.org/foreignkeys.html#fk_basics
             self._mb_conn.execute(
                 "CREATE TABLE IF NOT EXISTS spectra_meta( \
-                    accession            VARCHAR PRIMARY KEY NOT NULL, \
-                    dataset              VARCHAR NOT NULL, \
-                    record_title         VARCHAR NOT NULL, \
-                    molecule             INTEGER NOT NULL, \
-                    precursor_mz         FLOAT NOT NULL, \
-                    precursor_type       FLOAT NOT NULL, \
-                    collision_energy     FLOAT, \
-                    ms_type              VARCHAR NOT NULL, \
-                    resolution           FLOAT, \
-                    fragmentation_mode   VARCHAR, \
-                    exact_mass_error_ppm FLOAT, \
+                    accession                 VARCHAR PRIMARY KEY NOT NULL, \
+                    dataset                   VARCHAR NOT NULL, \
+                    record_title              VARCHAR NOT NULL, \
+                    molecule                  INTEGER NOT NULL, \
+                    precursor_mz              FLOAT NOT NULL, \
+                    precursor_type            FLOAT NOT NULL, \
+                    collision_energy          FLOAT, \
+                    ms_type                   VARCHAR NOT NULL, \
+                    resolution                FLOAT, \
+                    fragmentation_mode        VARCHAR, \
+                    exact_mass_error_ppm      FLOAT, \
+                    monoisotopic_mass_from_mz FLOAT, \
                  FOREIGN KEY(molecule)      REFERENCES molecules(cid),\
                  FOREIGN KEY(dataset)       REFERENCES datasets(name) ON DELETE CASCADE)"
             )
@@ -323,6 +325,15 @@ class MassbankDB(object):
                     continue
 
                 try:
+                    _monoisotopic_mass_from_mz = get_mass_from_ion(float(specs[acc].get("precursor_mz")),
+                                                                   specs[acc].get("precursor_type"))
+                except KeyError:
+                    LOGGER.info("{} Could not determine monoisotopic mass from precursor mz. (precursor-type={})"
+                                .format(acc, specs[acc].get("precursor_type")))
+                    continue
+                specs[acc].set("monoisotopic_mass_from_mz", _monoisotopic_mass_from_mz)
+
+                try:
                     with self._mb_conn:
                         self.insert_spectrum(dataset_identifier, contributor, specs[acc])
                 except sqlite3.IntegrityError as err:
@@ -424,7 +435,7 @@ class MassbankDB(object):
         # ===============================
         # Note: We can get a "FOREIGN KEY Constrained" SQLite Error here, if the dataset wasn't inserted due to missing
         #       information (e.g.).
-        self._mb_conn.execute("INSERT INTO spectra_meta VALUES (%s)" % self._get_db_value_placeholders(11),
+        self._mb_conn.execute("INSERT INTO spectra_meta VALUES (%s)" % self._get_db_value_placeholders(12),
                               (
                                    spectrum.get("accession"),
                                    dataset_identifier,
@@ -436,7 +447,8 @@ class MassbankDB(object):
                                    spectrum.get("ms_type"),
                                    spectrum.get("resolution"),
                                    spectrum.get("fragmentation_mode"),
-                                   spectrum.get("exact_mass_error_ppm")
+                                   spectrum.get("exact_mass_error_ppm"),
+                                   spectrum.get("monoisotopic_mass_from_mz")
                                ))
 
         # ====================
@@ -464,13 +476,24 @@ class MassbankDB(object):
 
         self._mb_conn.execute("INSERT INTO spectra_rts VALUES(?, ?)", (spectrum.get("accession"), _rt))
 
-    def iter_spectra(self, dataset, grouped=True, return_candidates=False, ppm=5, pc_dbfn=None):
+    def iter_spectra(self, dataset: str, grouped: bool = True, return_candidates: Optional[str] = None, ppm: float = 5,
+                     pc_dbfn: Optional[str] = None):
+        """
+
+        :param dataset:
+        :param grouped:
+        :param return_candidates:
+        :param ppm:
+        :param pc_dbfn:
+        :return:
+        """
         if grouped:
             rows = self._mb_conn.execute("SELECT GROUP_CONCAT(accession), dataset, molecule, "
                                          "       GROUP_CONCAT(precursor_mz), precursor_type, "
                                          "       GROUP_CONCAT(collision_energy), ms_type, "
                                          "       GROUP_CONCAT(resolution), spectra_meta.fragmentation_mode, "
-                                         "       d.instrument_type, d.instrument "
+                                         "       d.instrument_type, d.instrument,"
+                                         "       monoisotopic_mass_from_mz "
                                          "    FROM spectra_meta "
                                          "    INNER JOIN datasets d ON d.name = spectra_meta.dataset"
                                          "    WHERE dataset IS ? "
@@ -481,19 +504,20 @@ class MassbankDB(object):
                                          "       precursor_mz, precursor_type, "
                                          "       collision_energy, ms_type,"
                                          "       resolution, spectra_meta.fragmentation_mode, "
-                                         "       d.instrument_type, d.instrument "
+                                         "       d.instrument_type, d.instrument,"
+                                         "       monoisotopic_mass_from_mz "
                                          "   FROM spectra_meta "
                                          "   INNER JOIN datasets d ON d.name = spectra_meta.dataset"
                                          "   WHERE dataset IS ?", (dataset, ))
 
         # Open a connection to a local PubChemDB if needed and provided
-        if return_candidates in ["mf", "mz"]:
-            if pc_dbfn is None:
-                raise ValueError("No local PubChem DB. Candidates cannot be queried.")
-
-            pc_conn = sqlite3.connect("file:" + pc_dbfn + "?mode=ro", uri=True)  # open read-only
-        else:
-            pc_conn = None
+        if return_candidates is not None:
+            if return_candidates not in ["mf", "mz_gt", "mz_measured"]:
+                raise ValueError("Invalid candidate set definition '%s' requested. Choices are 'mf', 'mz_gt' and "
+                                 "'mz_measured'." % return_candidates)
+            else:
+                if pc_dbfn is None:
+                    raise ValueError("Path to the local PubChem SQLite file must be provided.")
 
         for row in rows:
             specs = []
@@ -502,21 +526,31 @@ class MassbankDB(object):
             # Load compound information
             # -------------------------
             # Note: This is equal for all spectra, if grouped, as the compound is a grouping criteria.
-            mol = self._mb_conn.execute("SELECT * FROM molecules WHERE cid = ?", (row[2],)).fetchone()
+            self._mb_conn.row_factory = named_row_factory
+            mol = self._mb_conn.execute("SELECT cid AS pubchem_id, inchi, inchikey, molecular_formula, exact_mass, "
+                                        "       monoisotopic_mass, smiles_can, smiles_iso "
+                                        "    FROM molecules WHERE cid = ?", (row[2], )).fetchone()
+            self._mb_conn.row_factory = None
 
             # --------------------------
             # Load candidate information
             # --------------------------
             if return_candidates == "mf":
-                cands = pd.read_sql("SELECT * FROM compounds WHERE molecular_formula IS '%s'" % mol[8], con=pc_conn)
-            elif return_candidates == "mz":
-                min_exact_mass, max_exact_mass = self._get_ppm_window(mol[7], ppm)
-                cands = pd.read_sql("SELECT * FROM compounds WHERE exact_mass BETWEEN %f AND %f" %
-                                    (min_exact_mass, max_exact_mass), con=pc_conn)
-            elif not return_candidates:
-                cands = None
+                # ... with the same 'molecular formula' as the ground truth structure
+                cands = self._get_candidates(pc_dbfn, molecular_formula=mol["molecular_formula"])
+            elif return_candidates == "mz_gt":
+                # ... with the same 'monoisotopic mass' as the ground truth structure
+                cands = self._get_candidates(pc_dbfn, mass=mol["monoisotopic_mass"], ppm=ppm)
+            elif return_candidates == "mz_measured":
+                # ... with the same 'monoisotopic mass' determined from the precursor m/z
+                cands = self._get_candidates(pc_dbfn, mass=row[11], ppm=ppm)
             else:
-                raise ValueError("Invalid")
+                cands = None
+
+            if cands is not None:
+                if mol["pubchem_id"] not in cands["cid"]:
+                    LOGGER.warning("Cannot find ground-truth molecular structure (cid={}) in the candidate set"
+                                   .format(mol["pubchem_id"]))
 
             # -----------------------------------------------------
             # Create a Spectrum object for all spectra in the group
@@ -541,41 +575,27 @@ class MassbankDB(object):
                 # -------------------
                 # Retention time data
                 # -------------------
-                rt = self._mb_conn.execute("SELECT retention_time FROM spectra_rts"
-                                           "    WHERE spectrum IS ?", (acc, )).fetchone()
-                specs[-1].set("retention_time", rt)
+                rt = self._mb_conn.execute("SELECT retention_time FROM spectra_rts WHERE spectrum IS ?", (acc, ))
+                specs[-1].set("retention_time", rt.fetchone())
 
                 # --------------------
                 # Compound information
                 # --------------------
-                specs[-1].set("pubchem_id", mol[0])
-                specs[-1].set("inchi", mol[1])
-                specs[-1].set("inchikey", mol[2])
-                specs[-1].set("smiles_iso", mol[5])
-                specs[-1].set("smiles_can", mol[6])
-                specs[-1].set("exact_mass", mol[7])
-                specs[-1].set("monoisotopic_mass", mol[8])
-                specs[-1].set("molecular_formula", mol[9])
+                for k, v in mol:
+                    specs[-1].set(k, v)
 
                 # --------------
                 # Spectrum peaks
                 # --------------
-                # TODO: Remove loop here
-                peaks = self._mb_conn.execute("SELECT mz, intensity FROM spectra_peaks "
-                                              "    WHERE spectrum IS ? "
-                                              "    ORDER BY mz", (acc, ))
-                specs[-1]._mz, specs[-1]._int = [], []
-                for peak in peaks:
-                    specs[-1]._mz.append(peak[0])
-                    specs[-1]._int.append(peak[1])
+                mz, ints = zip(*self._mb_conn.execute(
+                    "SELECT mz, intensity FROM spectra_peaks WHERE spectrum IS ? ORDER BY mz ASC", (acc, )).fetchall())
+                specs[-1].set_mz(list(mz))
+                specs[-1].set_int(list(ints))
 
             if not grouped:
                 specs = specs[0]
 
             yield mol, specs, cands
-
-        if pc_conn:
-            pc_conn.close()
 
     def filter_datasets_by_number_of_unique_compounds(self, min_number_of_unique_compounds_per_dataset: int = 50):
         """
@@ -634,7 +654,39 @@ class MassbankDB(object):
                                   "   WHERE name IS ?", (_num_spec, _num_cmp, dataset_identifier))
 
     @staticmethod
-    def cands_to_metfrag_format(cands, smiles_column="SMILES_ISO"):
+    def _get_candidates(pubchem_db_fn: str, mass: Optional[float] = None, molecular_formula: Optional[str] = None,
+                        ppm: float = 5, shuffle_rows: bool = True) -> pd.DataFrame:
+        """
+        TODO
+        """
+        if ((molecular_formula is not None) and (mass is not None)) or ((molecular_formula is None) and (mass is None)):
+            raise ValueError("Either 'mass' or 'molecular_formula' most be not None.")
+
+        # Connect to the PubChem DB
+        pubchem_db_con = sqlite3.connect("file:" + pubchem_db_fn + "?mode=ro", uri=True)  # open read-only
+
+        try:
+            if mass is not None:
+                stmt = "SELECT * FROM compounds WHERE monoisotopic_mass BETWEEN %f AND %f" % get_ppm_window(mass, ppm)
+            else:  # molecular formula is not None
+                stmt = "SELECT * FROM compounds WHERE molecular_formula IS '%s'" % molecular_formula
+
+            cands_out = pd.read_sql(stmt, con=pubchem_db_con)
+        finally:
+            pubchem_db_con.close()
+
+        if shuffle_rows:
+            cands_out = cands_out.sample(frac=1)
+
+        return cands_out
+
+    @staticmethod
+    def candidates_to_metfrag_format(
+            cands: pd.DataFrame, smiles_column: str = "SMILES_ISO", return_as_str: bool = True) \
+            -> Union[str, pd.DataFrame]:
+        """
+        TODO
+        """
         cands_out = cands.loc[:, ["monoisotopic_mass", "InChI", "cid", "InChIKey", "molecular_formula", smiles_column]]
         cands_out.assign(InChIKey1=cands_out["InChIKey"].apply(lambda _r: _r.split("-")[0]))
         cands_out.assign(InChIKey2=cands_out["InChIKey"].apply(lambda _r: _r.split("-")[1]))
@@ -643,12 +695,25 @@ class MassbankDB(object):
                                       "monoisotopic_mass": "MonoisotopicMass",
                                       smiles_column: "SMILES"},
                                      axis=1)
-        return cands_out.to_csv(None, sep="|", index=False)
+
+        if return_as_str:
+            return cands_out.to_csv(None, sep="|", index=False)
+        else:
+            return cands_out
 
     @staticmethod
-    def cands_to_sirius_format(cands, smiles_column="SMILES_ISO"):
-        return cands.loc[:, [smiles_column, "cid", "InChiKey", "molecular_formula"]] \
-            .to_csv(None, sep="\t", index=False, header=False)
+    def candidates_to_sirius_format(
+            cands: pd.DataFrame, smiles_column: str = "SMILES_ISO", return_as_str: bool = True) \
+            -> Union[str, pd.DataFrame]:
+        """
+        TODO
+        """
+        cands_out = cands.loc[:, [smiles_column, "cid", "InChIKey", "molecular_formula"]]
+
+        if return_as_str:
+            return cands_out.to_csv(None, sep="\t", index=False, header=False)
+        else:
+            return cands_out
 
     @staticmethod
     def _get_temporal_database(file_pth=":memory:"):
@@ -674,11 +739,6 @@ class MassbankDB(object):
                      "  fragmentation_mode  VARCHAR)")
 
         return conn
-
-    @staticmethod
-    def _get_ppm_window(exact_mass, ppm):
-        abs_deviation = exact_mass / 1e6 * ppm
-        return exact_mass - abs_deviation, exact_mass + abs_deviation
 
     @staticmethod
     def _get_db_value_placeholders(n, placeholder='?'):

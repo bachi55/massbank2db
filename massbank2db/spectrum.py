@@ -38,6 +38,7 @@ from zlib import crc32
 import massbank2db.db
 from massbank2db import HCLUST_LIB
 from massbank2db.parser import get_meta_regex, get_AC_regex, get_CH_regex, get_ms_regex
+from massbank2db.utils import named_row_factory
 
 # Setup the Logger
 LOGGER = logging.getLogger(__name__)
@@ -99,15 +100,6 @@ class MBSpectrum(object):
 
         :return: boolean, indicating whether an update could be performed.
         """
-        def my_row_factor(cursor, row):
-            """
-            SOURCE: https://docs.python.org/3.5/library/sqlite3.html#sqlite3.Connection.row_factory
-            """
-            d = {}
-            for idx, col in enumerate(cursor.description):
-                d[col[0]] = row[idx]
-            return d
-
         if ids is None:
             ids = ["inchi", "inchikey"]
 
@@ -115,7 +107,7 @@ class MBSpectrum(object):
 
         # Open a connection to a local PubChemDB
         db_conn = sqlite3.connect("file:" + pc_dbfn + "?mode=ro", uri=True)  # open read-only
-        db_conn.row_factory = my_row_factor
+        db_conn.row_factory = named_row_factory
 
         for _id in ids:
             # Get the ID values to query information from the local PubChem DB
@@ -237,7 +229,7 @@ class MBSpectrum(object):
         if molecular_candidates is None:
             output[cand_fn] = None
         else:
-            output[cand_fn] = massbank2db.db.MassbankDB.cands_to_sirius_format(molecular_candidates)
+            output[cand_fn] = massbank2db.db.MassbankDB.candidates_to_sirius_format(molecular_candidates)
 
         return output
 
@@ -286,7 +278,7 @@ class MBSpectrum(object):
         else:
             cands_fn = self.get("accession") + ".cands"
             local_database_path = os.path.join(kwargs["LocalDatabasePath"], cands_fn)
-            output[cands_fn] = massbank2db.db.MassbankDB.cands_to_metfrag_format(molecular_candidates)
+            output[cands_fn] = massbank2db.db.MassbankDB.candidates_to_metfrag_format(molecular_candidates)
 
         # TODO: MetFrag configuration
         try:
