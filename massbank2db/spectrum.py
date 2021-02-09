@@ -28,6 +28,7 @@ import logging
 import numpy as np
 import os
 import sqlite3
+import pandas as pd
 
 from ctypes import c_double, c_int, byref
 from typing import Dict, List, Optional, Union
@@ -37,6 +38,7 @@ from zlib import crc32
 import massbank2db.db
 from massbank2db import HCLUST_LIB
 from massbank2db.parser import get_meta_regex, get_AC_regex, get_CH_regex, get_ms_regex
+from massbank2db.utils import named_row_factory
 
 # Setup the Logger
 LOGGER = logging.getLogger(__name__)
@@ -68,7 +70,7 @@ class MBSpectrum(object):
         self._meta_information[key] = value
 
     def get_peak_list_as_tuples(self):
-        return list(zip(self._mz, self._int))
+        return zip(self._mz, self._int)
 
     def get_mz(self):
         return self._mz
@@ -98,15 +100,6 @@ class MBSpectrum(object):
 
         :return: boolean, indicating whether an update could be performed.
         """
-        def my_row_factor(cursor, row):
-            """
-            SOURCE: https://docs.python.org/3.5/library/sqlite3.html#sqlite3.Connection.row_factory
-            """
-            d = {}
-            for idx, col in enumerate(cursor.description):
-                d[col[0]] = row[idx]
-            return d
-
         if ids is None:
             ids = ["inchi", "inchikey"]
 
@@ -114,7 +107,7 @@ class MBSpectrum(object):
 
         # Open a connection to a local PubChemDB
         db_conn = sqlite3.connect("file:" + pc_dbfn + "?mode=ro", uri=True)  # open read-only
-        db_conn.row_factory = my_row_factor
+        db_conn.row_factory = named_row_factory
 
         for _id in ids:
             # Get the ID values to query information from the local PubChem DB
@@ -145,15 +138,102 @@ class MBSpectrum(object):
 
         return False
 
-    def _to_sirius_format(self, cands=None, **kwargs):
-        raise NotImplementedError()
+    def to_sirius_format(self, add_gt_molecular_formula: bool = False,
+                         molecular_candidates: Optional[pd.DataFrame] = None, **kwargs) -> Dict[str, str]:
+        """
 
-        # Meta-information
-        # compound = ">compound %s" % self.get("accession")
-        # parentmass = ">parentmass %f" % self.get("exact_mass")
-        # pass
 
-    def _to_metfrag_format(self, cands=None, **kwargs):
+        # Note: Based on [1,3,2] I would say we need to provide the 'monoisotopic_mass' to SIRIUS
+        # [1] https://boecker-lab.github.io/docs.sirius.github.io/prerequisites/#monoisotopic-masses
+        # [2] https://ftp.ncbi.nlm.nih.gov/pubchem/specifications/pubchem_sdtags.pdf
+        # [3] https://www.researchgate.net/post/Molecular-weight-or-exact-mass-in-LC-MS
+
+        :param add_gt_molecular_formula:
+        :param molecular_candidates:
+        :param kwargs:
+        :return:
+        """
+        output = {}
+        ms_fn = self.get("accession") + ".ms"
+        cand_fn = self.get("accession") + ".tsv"
+
+        # ====================
+        # Add meta-information
+        # ====================
+        sirius_string = ""
+        sirius_string += ">compound %s\n" % self.get("accession")
+        sirius_string += ">parentmass %s\n" % self.get("precursor_mz")
+        sirius_string += ">ionization %s\n" % self.get("precursor_type")
+
+        # ----------------------------------------------------------------------
+        # We can provide the ground truth molecular formula to SIRIUS if desired
+        # ----------------------------------------------------------------------
+        _formula = "formula %s\n" % self.get("molecular_formula")
+        if add_gt_molecular_formula:
+            sirius_string += (">" + _formula)
+        else:
+            sirius_string += ("#" + _formula)  # will be ignored by SIRIUS
+
+        if self.get("retention_time"):
+            sirius_string += ">rt %f\n" % (self.get("retention_time") * 60)  # SIRIUS expects the RTs in seconds
+
+        # -----------------------------------------
+        # Try to determine the right SIRIUS profile
+        # -----------------------------------------
+        if "orbitrap" in self.get("instrument").lower():
+            sirius_string += ">profile orbitrap\n"
+        elif "qtof" in self.get("instrument_type").lower():
+            sirius_string += ">profile qtof\n"
+        else:
+            sirius_string += ">profile default\n"
+
+        # ----------------------------------------
+        # Structure and external links as comments
+        # ----------------------------------------
+        sirius_string += "#smiles_iso %s\n" % self.get("smiles_iso")
+        sirius_string += "#smiles_can %s\n" % self.get("smiles_can")
+        sirius_string += "#inchikey %s\n" % self.get("inchikey")
+        sirius_string += "#pubchem_id %s\n" % self.get("pubchem_id")
+        if self.get("original_accessions") is not None:
+            sirius_string += "#mb_accession %s\n" % ",".join(self.get("original_accessions"))
+        else:
+            sirius_string += "#mb_accession %s\n" % self.get("accession")
+
+        # -------------------------
+        # Add additional parameters
+        # -------------------------
+        for k, v in kwargs.items():
+            sirius_string += ">{} {}\n".format(k, v)
+
+        sirius_string += "\n"
+
+        # =======================
+        # Add fragmentation peaks
+        # =======================
+        if self.get("merged_peak_list", True):
+            sirius_string += ">ms2merged\n"
+            sirius_string += "\n".join("%f %f" % (__mz, __int) for __mz, __int in self.get_peak_list_as_tuples())
+            sirius_string += "\n"
+        else:
+            for idx, ce in enumerate(self.get("collision_energy")):
+                sirius_string += ">collision %s\n" % ce
+                sirius_string += "\n".join("%f %f" % (__mz, __int)
+                                           for __mz, __int in zip(self.get_mz()[idx], self.get_int()[idx]))
+                sirius_string += "\n\n"
+
+        output[ms_fn] = sirius_string
+
+        # =================
+        # Handle candidates
+        # =================
+        if molecular_candidates is None:
+            output[cand_fn] = None
+        else:
+            output[cand_fn] = massbank2db.db.MassbankDB.candidates_to_sirius_format(molecular_candidates)
+
+        return output
+
+    def to_metfrag_format(self, molecular_candidates: Optional[pd.DataFrame] = None, **kwargs):
         # All supported MetFrag precursor (ion) types: https://ipb-halle.github.io/MetFrag/projects/metfragcl/
         # Apply molecular formula simplifications, e.g. CH3COO --> C2H3O2 or CH3OH --> CH4O, source for that
         # https://docs.google.com/spreadsheets/d/1r4dPw1shIEy_W2BkfgPsihinwg-Nah654VlNTn8Gxo0/edit#gid=0
@@ -180,6 +260,10 @@ class MBSpectrum(object):
         except KeyError as err:
             raise ValueError("The ionization mode '%s' is not supported by MetFrag." % err)
 
+        if not self.get("merged_peak_list", True):
+            raise ValueError("MetFrag requires merged peak lists, if multiple fragmentation spectra should be processed"
+                             " at ones.")
+
         peak_list_fn = self.get("accession") + ".peaks"
         config_fn = self.get("accession") + ".conf"
 
@@ -189,12 +273,12 @@ class MBSpectrum(object):
         }
 
         # Handle candidate set
-        if cands is None:
+        if molecular_candidates is None:
             local_database_path = kwargs["LocalDatabasePath"]
         else:
             cands_fn = self.get("accession") + ".cands"
             local_database_path = os.path.join(kwargs["LocalDatabasePath"], cands_fn)
-            output[cands_fn] = massbank2db.db.MassbankDB._cands_to_metfrag_format(cands)
+            output[cands_fn] = massbank2db.db.MassbankDB.candidates_to_metfrag_format(molecular_candidates)
 
         # TODO: MetFrag configuration
         try:
@@ -331,13 +415,14 @@ class MBSpectrum(object):
         return mzs, ints
 
     @staticmethod
-    def merge_spectra(spectra, eppm=5, eabs=0.001, rt_agg_fun=np.min):
+    def merge_spectra(spectra, rt_agg_fun=np.mean, merge_peak_lists=True, normalize_peaks_before_merge=True,
+                      eppm=5, eabs=0.001):
         """
-        Combining a list of spectra. Their peaks are merged into a single spectrum using hierarchical clustering. The
-        meta information is merged in the following way:
+        Merge the information from a list of spectra. If desired, their peak lists, e.g. belonging to different
+        collision energies, are merged as well using hierarchical clustering. The meta information is merged as follows:
 
-            - if the meta-information is equal for all spectra, then the output spectrum contains only a single info
-            - if the meta-information is different for the spectra, a list of values is kept
+            - If the meta-information is equal for all spectra, then the output spectrum contains only a single info
+            - If the meta-information is different for the spectra, a list of values is kept
 
         E.g.:
 
@@ -349,59 +434,93 @@ class MBSpectrum(object):
             spec_1: "ce" = 20ev => spec_merged "ce" = [10ev, 20ev, 40ev]
             spec_1: "ce" = 40ev
 
-        If the spectrum contains retention time (RT) information (accessible via the 'rt_key' variable), than the RTs
-        are either aggregated using the 'rt_agg_fun' or simply concatenated if 'rt_agg_fun=None'.
+        If the spectrum contains retention time (RT) information, than the RTs are either aggregated using the
+        'rt_agg_fun' or simply concatenated if 'rt_agg_fun=None'.
 
         - TODO: add reference to the clustering algorithm
 
         :param spectra: list of MBSpectrum objects, MS/MS spectra to merge.
 
+        :param rt_agg_fun: function, to aggregate the retention time information, if provided in the meta information of
+            the spectra. The function should take in an iterable or numpy.ndarray and output a scalar
+
+        :param merge_peak_lists: boolean, indicating whether the peak lists (i.e. fragmentation spectra) of the spectra
+            should be merged using hierarchical clustering.
+
+        :param normalize_peaks_before_merge: boolean, indicating whether the peak intensities of the individual peak
+            lists to merge should be normalized (maximum value is scaled to 1.0) before merging.
+
         :param eppm: scalar, relative error in ppm
 
         :param eabs: scalar, absolute error in Da
 
-        :param rt_agg_fun: function, to aggregate the retention time information, if provided in the meta information of
-            the spectra. The function should take in an iterable or numpy.ndarray and output a scalar
-
         :return: MBSpectrum, merged spectrum
         """
-        # Concatenate all spectra
-        mzs = []
-        intensities = []
-        for spectrum in spectra:
-            mzs += spectrum.get_mz()
+        if isinstance(spectra, MBSpectrum):
+            spectra = [spectra]
+        elif len(spectra) == 0:
+            raise ValueError("An empty spectra list cannot be merged.")
 
-            # Work with normalized intensities
-            _max_int = np.max(spectrum.get_int())
-            _ints = [_int / _max_int for _int in spectrum.get_int()]
-            intensities += _ints
-
-        mzs = np.array(mzs)
-        intensities = np.array(intensities)
-
-        # Run hierarchical clustering on the spectra peaks and return peak-grouping
-        grouping = mzClust_hclust(mzs, eppm / 1e6, eabs)
-
-        # Aggregate the peak-clusters as described in [1]: mean mass-per-charge and maximum intensities
+        # =====================
+        # Handle the peak lists
+        # =====================
         mzs_out = []
         ints_out = []
-        for peaks in grouping.values():
-            mzs_out.append(np.mean(mzs[peaks]))
-            ints_out.append(np.max(intensities[peaks]))
-        mzs_out = np.array(mzs_out)
-        ints_out = np.array(ints_out)
 
-        # Sort the peaks (mz, int) by their mass-per-charge values
-        _idc_sorted = np.argsort(mzs_out)
-        mzs_out = mzs_out[_idc_sorted].tolist()
-        ints_out = ints_out[_idc_sorted].tolist()
+        if merge_peak_lists:
+            # ----------------------------------
+            # Merge them into a single peak list
+            # ----------------------------------
+            mzs = []
+            intensities = []
 
+            for spectrum in spectra:
+                mzs += spectrum.get_mz()
+
+                if normalize_peaks_before_merge:
+                    # Work with normalized intensities
+                    _norm = np.max(spectrum.get_int())
+                    _ints = [_int / _norm for _int in spectrum.get_int()]
+                    intensities += _ints
+                else:
+                    intensities += spectrum.get_int()
+
+            mzs = np.array(mzs)
+            intensities = np.array(intensities)
+
+            # Run hierarchical clustering on the spectra peaks and return peak-grouping
+            grouping = mzClust_hclust(mzs, eppm / 1e6, eabs)
+
+            # Aggregate the peak-clusters as described in [1]: mean mass-per-charge and maximum intensities
+            for peaks in grouping.values():
+                mzs_out.append(np.mean(mzs[peaks]))
+                ints_out.append(np.max(intensities[peaks]))
+            mzs_out = np.array(mzs_out)
+            ints_out = np.array(ints_out)
+
+            # Sort the peaks (mz, int) by their mass-per-charge values
+            _idc_sorted = np.argsort(mzs_out)
+            mzs_out = mzs_out[_idc_sorted].tolist()
+            ints_out = ints_out[_idc_sorted].tolist()
+        else:
+            # -------------------------------
+            # Store the peak lists separately
+            # -------------------------------
+            for spectrum in spectra:
+                mzs_out.append(spectrum.get_mz())
+                ints_out.append(spectrum.get_int())
+
+        # =================================
         # Create the merged output spectrum
+        # =================================
         spec_out = MBSpectrum()
+        spec_out.set("merged_peak_list", merge_peak_lists)
         spec_out.set_mz(mzs_out)
         spec_out.set_int(ints_out)
 
+        # -------------------------------------------
         # Set meta information of the output spectrum
+        # -------------------------------------------
         for info in spectra[0].get_meta_information():
             _info = []
             for spectrum in spectra:
@@ -412,15 +531,15 @@ class MBSpectrum(object):
             else:
                 spec_out.set(info, _info)
 
-        # Merge retention time information
-        if rt_agg_fun is not None and spec_out.get("retention_time"):
-            if not isinstance(spec_out.get("retention_time_unit"), str):
-                raise ValueError("Merging not possible, as retention time units are not equal for all spectra: ",
-                                 spec_out.get("retention_time_unit"))
-
+        # ----------------------------------------------------------------
+        # Merge retention time information (all RTs are stored in minutes)
+        # ----------------------------------------------------------------
+        if rt_agg_fun is not None:
             spec_out.set("retention_time", rt_agg_fun(spec_out.get("retention_time")))
 
+        # -------------------------------------------------------------------------------
         # Create new accession ID from the accession IDs of the individual merged spectra
+        # ----------------------------------------------------------------
         spec_out.set("original_accessions", spec_out.get("accession"))
         spec_out.set("accession", MBSpectrum._get_new_accession_id(spec_out.get("accession")))
 
@@ -476,30 +595,9 @@ def mzClust_hclust(mzs, eppm, eabs):
 
     return grouping
 
-# OLD CODE
-# Apply filter to the each spectrum as described in [1]
-# 1) Keep only spectra, that contain at least one fragment peak _other_ than the precursor
-# _mzs = spectrum.get_mz()
-# if len(_mzs) < 2:
-#     print("skip:", spectrum.get("accession"))
-#     continue
-# if all([_within_error_window_around_peak(float(spectrum.get("precursor_mz")), _mz, eppm, eabs)
-#         for _mz in _mzs]):
-#     print("skip:", spectrum.get("accession"))
-#     continue
-
-# def _within_error_window_around_peak(mz_center, mz, eppm, eabs):
-#     lb = mz_center - mz_center * eppm - eabs
-#     up = mz_center + mz_center * eppm + eabs
-#
-#     if (lb <= mz) and (mz <= up):
-#         return True
-#     else:
-#         return False
-
 
 if __name__ == "__main__":
-    msfn = "/run/media/bach/EVO500GB/data/MassBank/Chubu_Univ/UT001973.txt"
+    msfn = "/home/bach/Documents/doctoral/data/MassBank-data_bachi55/Chubu_Univ/UT001973.txt"
 
     # Read all meta information from the MS-file
     spec = MBSpectrum(msfn)
