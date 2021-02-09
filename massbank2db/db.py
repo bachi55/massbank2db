@@ -36,7 +36,7 @@ from typing import Optional, List, Union
 
 import massbank2db.spectrum
 from massbank2db.utils import get_mass_error_in_ppm, estimate_column_deadtime, named_row_factory, get_ppm_window
-from massbank2db.utils import get_mass_from_ion
+from massbank2db.utils import get_mass_from_precursor_mz
 from massbank2db.parser import parse_column_name, parse_flow_rate_string
 
 # Setup the Loggers
@@ -316,17 +316,17 @@ class MassbankDB(object):
                 # Insert the spectrum to the database
                 # -----------------------------------
                 specs[acc].set("exact_mass_error_ppm",
-                               get_mass_error_in_ppm(float(specs[acc].get("monoisotopic_mass")),
-                                                     float(specs[acc].get("precursor_mz")),
-                                                     specs[acc].get("precursor_type")))
+                               np.abs(get_mass_error_in_ppm(float(specs[acc].get("monoisotopic_mass")),
+                                                            float(specs[acc].get("precursor_mz")),
+                                                            specs[acc].get("precursor_type"))))
                 if specs[acc].get("exact_mass_error_ppm") is None:
                     LOGGER.info("{} Could not determine exact mass error. (precursor-type={})"
                                 .format(acc, specs[acc].get("precursor_type")))
                     continue
 
                 try:
-                    _monoisotopic_mass_from_mz = get_mass_from_ion(float(specs[acc].get("precursor_mz")),
-                                                                   specs[acc].get("precursor_type"))
+                    _monoisotopic_mass_from_mz = get_mass_from_precursor_mz(float(specs[acc].get("precursor_mz")),
+                                                                            specs[acc].get("precursor_type"))
                 except KeyError:
                     LOGGER.info("{} Could not determine monoisotopic mass from precursor mz. (precursor-type={})"
                                 .format(acc, specs[acc].get("precursor_type")))

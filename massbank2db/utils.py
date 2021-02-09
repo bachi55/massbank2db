@@ -27,15 +27,6 @@ import numpy as np
 
 from typing import Optional
 
-# TODO: Currently unsupported precursor-types
-#  '[M+CH3COOH-H]-': None,
-#  '[M-H-C6H10O5]-': None,
-#  '[M-H+CH2O2]-': None,
-#  '[M-H+C2H2O]-': None,
-#  '[M-CH3]-': None,
-#  '[M+H-NH3]+': None,
-#  '[M+H-C9H10O5]+': None,
-#  '[M-C6H10O5+H]+': None
 
 # Values are taken from:
 # https://docs.google.com/spreadsheets/d/1r4dPw1shIEy_W2BkfgPsihinwg-Nah654VlNTn8Gxo0/edit?usp=sharing
@@ -73,7 +64,7 @@ def get_precursor_mz(mass, precursor_type):
         raise KeyError("Unsupported precursor-type '%s'." % precursor_type)
 
 
-def get_mass_from_ion(precursor_mz, precursor_type):
+def get_mass_from_precursor_mz(precursor_mz, precursor_type):
     """
     Calculate monoisotopic mass from a given ion mass / precursor mz based on the precursor type.
 
@@ -89,20 +80,33 @@ def get_mass_from_ion(precursor_mz, precursor_type):
         raise KeyError("Unsupported precursor-type '%s'." % precursor_type)
 
 
-def get_mass_error_in_ppm(monoisotopic_mass, precursor_mz, precursor_type):
+def get_mass_error_in_ppm(mass, exp_precursor_mz, precursor_type):
     """
+    :param mass: scalar, mass of a compound, e.g. monoisotopic or exact mass.
 
-    :param monoisotopic_mass:
-    :param precursor_mz:
-    :param precursor_type:
-    :return:
+    :param exp_precursor_mz: scalar, ion mass / precursor mz
+
+    :param precursor_type: string, precursor type, e.g. '[M+H]+'
+
+    :return: scalar, mass error in ppm
     """
     try:
-        theoretical_precursor_mz = get_precursor_mz(monoisotopic_mass, precursor_type)
+        calc_precursor_mz = get_precursor_mz(mass, precursor_type)
     except KeyError:
+        # Precursor type was not found
         return None
 
-    return (abs(theoretical_precursor_mz - precursor_mz) * 1e6) / theoretical_precursor_mz
+    return _get_mass_error_in_ppm(calc_precursor_mz, exp_precursor_mz)
+
+
+def _get_mass_error_in_ppm(calc_mass, exp_mass):
+    """
+
+    :param calc_mass:
+    :param exp_mass:
+    :return:
+    """
+    return (exp_mass - calc_mass) / calc_mass * 1e6
 
 
 def estimate_column_deadtime(length, diameter, flow_rate, flow_rate_unit="uL/min") -> Optional[float]:
