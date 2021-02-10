@@ -27,7 +27,7 @@ import numpy as np
 import unittest
 
 from massbank2db.utils import estimate_column_deadtime, get_precursor_mz, get_mass_from_precursor_mz, ADDUCT_MASSES
-from massbank2db.utils import _get_mass_error_in_ppm
+from massbank2db.utils import _get_mass_error_in_ppm, get_ppm_window
 
 
 class TestMassTools(unittest.TestCase):
@@ -63,6 +63,13 @@ class TestMassTools(unittest.TestCase):
         self.assertEqual(np.round(1.726473, 4), np.abs(np.round(_get_mass_error_in_ppm(463.37243, 463.37323), 4)))
         self.assertEqual(np.round(-1221.001221, 4), np.round(_get_mass_error_in_ppm(819, 818), 4))
         self.assertEqual(np.round(-12.208373, 4), np.round(_get_mass_error_in_ppm(819.11, 819.1), 4))
+
+    def test_ppm_window(self):
+        # Test against: https://warwick.ac.uk/fac/sci/chemistry/research/barrow/barrowgroup/calculators/mass_errors/
+        self.assertEqual((399.9996, 400.0004), get_ppm_window(400, 1))
+        self.assertEqual((399.998, 400.002), get_ppm_window(400, 5))
+        _min, _max = get_ppm_window(271.4324, 5)
+        self.assertEqual((271.431043, 271.433757), (np.round(_min, 6), np.round(_max, 6)))
 
 
 class TestColumnDeadtimeEstimation(unittest.TestCase):
