@@ -2,7 +2,7 @@
 #
 # The MIT License (MIT)
 #
-# Copyright 2020 Eric Bach <eric.bach@aalto.fi>
+# Copyright 2020, 2021 Eric Bach <eric.bach@aalto.fi>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -39,6 +39,7 @@ import massbank2db.db
 from massbank2db import HCLUST_LIB
 from massbank2db.parser import get_meta_regex, get_AC_regex, get_CH_regex, get_ms_regex
 from massbank2db.utils import named_row_factory
+from massbank2db.exceptions import UnsupportedPrecursorType
 
 # Setup the Logger
 LOGGER = logging.getLogger(__name__)
@@ -216,7 +217,8 @@ class MBSpectrum(object):
             sirius_string += "\n"
         else:
             for idx, ce in enumerate(self.get("collision_energy")):
-                sirius_string += ">collision %s\n" % ce
+                # sirius_string += ">collision %s\n" % ce  # TODO: Specifications like "Ramp 20.3-34eV" are not handled by SIRIUS
+                sirius_string += ">ms2peaks\n"
                 sirius_string += "\n".join("%f %f" % (__mz, __int)
                                            for __mz, __int in zip(self.get_mz()[idx], self.get_int()[idx]))
                 sirius_string += "\n\n"
@@ -258,7 +260,7 @@ class MBSpectrum(object):
         try:
             precursor_ion_mode, is_positive_mode = metfrag_prec_type2mode[self.get("precursor_type")]
         except KeyError as err:
-            raise ValueError("The ionization mode '%s' is not supported by MetFrag." % err)
+            raise UnsupportedPrecursorType("The precursor-type '%s' is not supported by MetFrag." % err)
 
         if not self.get("merged_peak_list", True):
             raise ValueError("MetFrag requires merged peak lists, if multiple fragmentation spectra should be processed"
@@ -318,7 +320,7 @@ class MBSpectrum(object):
                 "NumberThreads=%d" % kwargs["NumberThreads"],
                 "PrecursorIonMode=%d" % precursor_ion_mode,
                 "IsPositiveIonMode=%s" % is_positive_mode,
-                "NeutralPrecursorMass=%s" % self.get("exact_mass"),
+                "NeutralPrecursorMass=%s" % self.get("monoisotopic_mass"),
                 "UseSmiles=%s" % kwargs.get("UseSmiles", False),
                 "SampleName=%s" % self.get("accession"),
                 "PeakListPath=%s" % os.path.join(kwargs["PeakListPath"], peak_list_fn),
@@ -526,7 +528,8 @@ class MBSpectrum(object):
             for spectrum in spectra:
                 _info.append(spectrum.get(info))
 
-            if len(set(_info)) == 1 and info != "retention_time" and info != "accession":
+            if len(set(_info)) == 1 \
+                    and info != "retention_time" and info != "accession" and info != "collision_energy":
                 spec_out.set(info, _info[0])
             else:
                 spec_out.set(info, _info)

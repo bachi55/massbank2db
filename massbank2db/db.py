@@ -316,9 +316,9 @@ class MassbankDB(object):
                 # Insert the spectrum to the database
                 # -----------------------------------
                 specs[acc].set("exact_mass_error_ppm",
-                               np.abs(get_mass_error_in_ppm(float(specs[acc].get("monoisotopic_mass")),
-                                                            float(specs[acc].get("precursor_mz")),
-                                                            specs[acc].get("precursor_type"))))
+                               get_mass_error_in_ppm(float(specs[acc].get("monoisotopic_mass")),
+                                                     float(specs[acc].get("precursor_mz")),
+                                                           specs[acc].get("precursor_type")))
                 if specs[acc].get("exact_mass_error_ppm") is None:
                     LOGGER.info("{} Could not determine exact mass error. (precursor-type={})"
                                 .format(acc, specs[acc].get("precursor_type")))
@@ -489,11 +489,11 @@ class MassbankDB(object):
         """
         if grouped:
             rows = self._mb_conn.execute("SELECT GROUP_CONCAT(accession), dataset, molecule, "
-                                         "       GROUP_CONCAT(precursor_mz), precursor_type, "
+                                         "       AVG(precursor_mz), precursor_type, "
                                          "       GROUP_CONCAT(collision_energy), ms_type, "
                                          "       GROUP_CONCAT(resolution), spectra_meta.fragmentation_mode, "
                                          "       d.instrument_type, d.instrument,"
-                                         "       monoisotopic_mass_from_mz "
+                                         "       AVG(monoisotopic_mass_from_mz) "
                                          "    FROM spectra_meta "
                                          "    INNER JOIN datasets d ON d.name = spectra_meta.dataset"
                                          "    WHERE dataset IS ? "
@@ -548,9 +548,9 @@ class MassbankDB(object):
                 cands = None
 
             if cands is not None:
-                if mol["pubchem_id"] not in cands["cid"]:
-                    LOGGER.warning("Cannot find ground-truth molecular structure (cid={}) in the candidate set"
-                                   .format(mol["pubchem_id"]))
+                if mol["pubchem_id"] not in cands["cid"].values:
+                    LOGGER.warning("({}) Cannot find ground-truth molecular structure (cid={}) in the candidate set"
+                                   .format(row[0], mol["pubchem_id"]))
 
             # -----------------------------------------------------
             # Create a Spectrum object for all spectra in the group
@@ -576,12 +576,12 @@ class MassbankDB(object):
                 # Retention time data
                 # -------------------
                 rt = self._mb_conn.execute("SELECT retention_time FROM spectra_rts WHERE spectrum IS ?", (acc, ))
-                specs[-1].set("retention_time", rt.fetchone())
+                specs[-1].set("retention_time", rt.fetchone()[0])
 
                 # --------------------
                 # Compound information
                 # --------------------
-                for k, v in mol:
+                for k, v in mol.items():
                     specs[-1].set(k, v)
 
                 # --------------
@@ -623,7 +623,8 @@ class MassbankDB(object):
         :return:
         """
         with self._mb_conn:
-            self._mb_conn.execute("DELETE FROM spectra_meta WHERE exact_mass_error_ppm > ?", (max_exact_mass_error_ppm, ))
+            self._mb_conn.execute("DELETE FROM spectra_meta WHERE ABS(exact_mass_error_ppm) > ?",
+                                  (max_exact_mass_error_ppm, ))
 
         self._update_num_spectra_and_compounds_in_dataset_table()
 

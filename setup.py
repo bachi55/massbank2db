@@ -4,7 +4,7 @@ mzClust_hclust = Extension('massbank2db.mzClust_hclust', sources=["src/mzClust_h
 
 setup(
     name="massbank2db",
-    version="0.6.0",
+    version="0.6.1",
     license="MIT",
     packages=find_packages(exclude=["tests", "examples", "*.ipynb", "inspect_candidates.py"]),
 

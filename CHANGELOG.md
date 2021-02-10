@@ -1,5 +1,10 @@
 # Changelog
 
+## Version 0.6.1
+**Bug fix release**
+- fixed several bugs in the SIRIUS exporter
+- updated the DB usage tutorial to be compatible with the latest version
+
 ## Version 0.6.0
 **Feature release**
 - add [exporting tool for SIRIUS .ms-files](https://github.com/bachi55/massbank2db/issues/4)
