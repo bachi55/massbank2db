@@ -1,5 +1,10 @@
 # Changelog
 
+## Version 0.6.0
+**Feature release**
+- add [exporting tool for SIRIUS .ms-files](https://github.com/bachi55/massbank2db/issues/4)
+- add more tests
+
 ## Version 0.5.0
 **Feature release**
 - add [pipeline design](https://github.com/bachi55/massbank2db/pull/9) to filter spectra and datasets from the database
