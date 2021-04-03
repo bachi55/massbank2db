@@ -433,8 +433,8 @@ class MBSpectrum(object):
             spec_3: "inchikey" = "OUSYWCQYMPDAEO-UHFFFAOYSA-N"
 
             spec_1: "ce" = 10ev
-            spec_1: "ce" = 20ev => spec_merged "ce" = [10ev, 20ev, 40ev]
-            spec_1: "ce" = 40ev
+            spec_2: "ce" = 20ev => spec_merged "ce" = [10ev, 20ev, 40ev]
+            spec_3: "ce" = 40ev
 
         If the spectrum contains retention time (RT) information, than the RTs are either aggregated using the
         'rt_agg_fun' or simply concatenated if 'rt_agg_fun=None'.
@@ -499,6 +499,10 @@ class MBSpectrum(object):
                 ints_out.append(np.max(intensities[peaks]))
             mzs_out = np.array(mzs_out)
             ints_out = np.array(ints_out)
+
+            # If the peaks where not normalized before merging, we do it now
+            if not normalize_peaks_before_merge:
+                ints_out /= np.max(ints_out)
 
             # Sort the peaks (mz, int) by their mass-per-charge values
             _idc_sorted = np.argsort(mzs_out)

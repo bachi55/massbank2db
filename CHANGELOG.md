@@ -1,5 +1,12 @@
 # Changelog
 
+## Version 0.6.2
+**Minor changes**
+
+### Spectra merging
+- intensities can be normalized (to maximum one) *after* the spectra have been merged
+- 
+
 ## Version 0.6.1
 **Bug fix release**
 - fixed several bugs in the SIRIUS exporter

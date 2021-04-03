@@ -336,6 +336,53 @@ class TestMBSpectrumMerging(unittest.TestCase):
         np.testing.assert_almost_equal(mzs_ref, merged_spectrum.get_mz())
         np.testing.assert_almost_equal(ints_ref / 999, merged_spectrum.get_int(), decimal=3)
 
+    def test_spectra_merging__no_normalization__EAX000401(self):
+        """
+        We compare our spectra merging with the strategy applied in [1] and originally proposed in [2].
+
+        References:
+            [1] "MetFrag relaunched: incorporating strategies beyond in silico fragmentation" by Ruttkies et al. (2016)
+            [2] "Alignment of high resolution mass spectra: development of a heuristic approach for metabolomics" by
+                Kazmi et al. (2006)
+        """
+        # Load the list of spectra to merge: EA0004[01][0-9].txt --> EAX000401.txt
+        spectra = []
+        for mb_fn in glob.iglob(os.path.join("example_massbank_records", "EA0004[01][0-9].txt")):
+            spectra.append(MBSpectrum(mb_fn))
+
+        # Run the spectra merging using hierarchical clustering
+        merged_spectrum = MBSpectrum.merge_spectra(spectra, normalize_peaks_before_merge=False)  # type: MBSpectrum
+
+        # Merged spectrum as used by [1]
+        peaks_ref = [
+            (53.03852, 55),
+            (57.0447285714286, 93),
+            (65.0386, 116),
+            (77.0386, 884),
+            (81.03345, 12),
+            (85.0396545454545, 17),
+            (91.0542714285714, 123),
+            (92.0494875, 377),
+            (95.04925, 112),
+            (103.041733333333, 15),
+            (104.049541666667, 999),
+            (105.044757142857, 271),
+            (105.069975, 12),
+            (110.060033333333, 7),
+            (119.060475, 631),
+            (130.04005, 11),
+            (130.0652, 49),
+            (131.07295, 24),
+            (142.0652, 9),
+            (147.0554, 3),
+            (160.087069230769, 999),
+            (188.082038461538, 999)
+        ]
+
+        mzs_ref = list(zip(*peaks_ref))[0]
+
+        np.testing.assert_almost_equal(mzs_ref, merged_spectrum.get_mz())
+
     def test_spectra_merging__EAX281502(self):
         """
         We compare our spectra merging with the strategy applied in [1] and originally proposed in [2].
