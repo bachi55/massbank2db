@@ -1,3 +1,31 @@
+/*
+    Implementation of a hierarchical clustering to merge MS/MS spectra.
+
+    The source code was originally published with the XCMS package and can be found here:
+
+        https://github.com/sneumann/xcms
+
+    All code copyright (c) 2005 The Scripps Research Institute with the exception
+    that Massifquant-specific code copyright (c) 2013 Brigham Young University.
+    All accompanying written materials copyright (c) 2005 Colin A. Smith with the
+    exception that Massifquant-specific documentation copyright (c) 2013 Brigham
+    Young University.
+
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation; either version 2 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License along
+    with this program; if not, write to the Free Software Foundation, Inc.,
+    51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+*/
+
 #include <float.h>
 #include <stdlib.h>
 

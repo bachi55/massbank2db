@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 0.6.4
+
+- Change License from MIT to GNU GPLv3
+
 ## Version 0.6.3
 **Bug fix release**
 
