@@ -689,8 +689,8 @@ class MassbankDB(object):
         TODO
         """
         cands_out = cands.loc[:, ["monoisotopic_mass", "InChI", "cid", "InChIKey", "molecular_formula", smiles_column]]
-        cands_out.assign(InChIKey1=cands_out["InChIKey"].apply(lambda _r: _r.split("-")[0]))
-        cands_out.assign(InChIKey2=cands_out["InChIKey"].apply(lambda _r: _r.split("-")[1]))
+        cands_out = cands_out.assign(InChIKey1=cands_out["InChIKey"].apply(lambda _r: _r.split("-")[0]))
+        cands_out = cands_out.assign(InChIKey2=cands_out["InChIKey"].apply(lambda _r: _r.split("-")[1]))
         cands_out = cands_out.rename({"cid": "Identifier",
                                       "molecular_formula": "MolecularFormula",
                                       "monoisotopic_mass": "MonoisotopicMass",

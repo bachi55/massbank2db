@@ -1,10 +1,16 @@
 from setuptools import setup, find_packages, Extension
+from distutils.util import convert_path
 
 mzClust_hclust = Extension('massbank2db.mzClust_hclust', sources=["src/mzClust_hclust.c"])
 
+main_ns = {}
+ver_path = convert_path('massbank2db/version.py')
+with open(ver_path) as ver_file:
+    exec(ver_file.read(), main_ns)
+
 setup(
     name="massbank2db",
-    version="0.6.2",
+    version=main_ns["__version__"],
     license="MIT",
     packages=find_packages(exclude=["tests", "examples", "*.ipynb", "inspect_candidates.py"]),
 

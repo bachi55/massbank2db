@@ -1,11 +1,14 @@
 # Changelog
 
-## Version 0.6.2
-**Minor changes**
+## Version 0.6.3
+**Bug fix release**
 
-### Spectra merging
-- intensities can be normalized (to maximum one) *after* the spectra have been merged
-- 
+- When writing MetFrag candidate sets, the InChIKey1 and InChIKey2 column is now stored as well.
+
+## Version 0.6.2
+**Minor changes** 
+
+- **Spectra merging** intensities can be normalized (to maximum one) *after* the spectra have been merged
 
 ## Version 0.6.1
 **Bug fix release**
