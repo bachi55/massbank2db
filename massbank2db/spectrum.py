@@ -137,13 +137,6 @@ class MBSpectrum(object):
     def to_sirius_format(self, add_gt_molecular_formula: bool = False,
                          molecular_candidates: Optional[pd.DataFrame] = None, **kwargs) -> Dict[str, str]:
         """
-
-
-        # Note: Based on [1,3,2] I would say we need to provide the 'monoisotopic_mass' to SIRIUS
-        # [1] https://boecker-lab.github.io/docs.sirius.github.io/prerequisites/#monoisotopic-masses
-        # [2] https://ftp.ncbi.nlm.nih.gov/pubchem/specifications/pubchem_sdtags.pdf
-        # [3] https://www.researchgate.net/post/Molecular-weight-or-exact-mass-in-LC-MS
-
         :param add_gt_molecular_formula:
         :param molecular_candidates:
         :param kwargs:
@@ -323,6 +316,48 @@ class MBSpectrum(object):
         except KeyError as err:
             # TODO: Should we log this event / error?
             raise ValueError("The value of '%s' is not provided and no default is defined." % err)
+
+        return output
+
+    def to_cfmid_format(self, molecular_candidates: Optional[pd.DataFrame] = None, **kwargs):
+        """
+        :param molecular_candidates:
+        :param kwargs:
+        :return:
+        """
+        if not self.get("merged_peak_list", True):
+            # TODO: Probably it would better if we somehow classify the MS2 energies and only merge those falling into
+            #       the same energy category. We would than provide different spectra for the different energies.
+            raise NotImplementedError(
+                "Currently only merge peak lists are supported for CFM-ID. For each of the three (3) energies used by "
+                "CFM-ID we use the same spectrum, which is the merged one of all energies."
+            )
+
+        # Peak list: space-separated list --> mz int\n
+        peak_list = ""
+        for energy in ["energy0", "energy1", "energy2"]:
+            peak_list += (energy + "\n")
+            peak_list += "\n".join(["%f %f" % (mz, intensity) for mz, intensity in zip(self._mz, self._int)])
+            peak_list += "\n\n"
+
+        peak_list_fn = self.get("accession") + ".txt"
+        output = {
+            peak_list_fn: peak_list,
+        }
+
+        # Store some meta-data used to perform the scoring with the predicted candidate spectra
+        meta_fn = self.get("accession") + ".meta"
+        output[meta_fn] = "precursor_mz=%f" % self.get("precursor_mz")
+
+        # Handle candidate set
+        cands_fn = self.get("accession") + ".cands"
+        if molecular_candidates is None:
+            output[cands_fn] = None
+        else:
+            output[cands_fn] = massbank2db.db.MassbankDB.candidates_to_cfmid_format(
+                molecular_candidates, mol_id_column=kwargs.get("cands__mol_id_column", "cid"),
+                smiles_column=kwargs.get("cands__smiles_column", "SMILES_ISO")
+            )
 
         return output
 

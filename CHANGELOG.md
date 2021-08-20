@@ -1,5 +1,14 @@
 # Changelog
 
+## Version 0.7.0
+**Feature release**
+
+### Add support for the CFM-ID in-silico tool
+
+- spectra can be exported to fit the input format of CFM-ID
+- multiple collision energies in Massbank are merged and repeated for the three energy levels that CFM-ID expects
+- candidate lists can be created
+
 ## Version 0.6.4
 
 - Change License from MIT to GNU GPLv3

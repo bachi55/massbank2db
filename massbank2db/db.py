@@ -677,6 +677,20 @@ class MassbankDB(object):
         return cands_out
 
     @staticmethod
+    def candidates_to_cfmid_format(
+            cands: pd.DataFrame, smiles_column: str = "SMILES_ISO", return_as_str: bool = True, mol_id_column="cid") \
+            -> Union[str, pd.DataFrame]:
+        """
+        TODO
+        """
+        cands_out = cands.loc[:, [mol_id_column, smiles_column]]
+
+        if return_as_str:
+            return cands_out.to_csv(None, sep=" ", header=False, index=False)
+        else:
+            return cands_out
+
+    @staticmethod
     def candidates_to_metfrag_format(
             cands: pd.DataFrame, smiles_column: str = "SMILES_ISO", return_as_str: bool = True) \
             -> Union[str, pd.DataFrame]:
