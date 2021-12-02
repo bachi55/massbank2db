@@ -229,7 +229,7 @@ class MBSpectrum(object):
         # https://docs.google.com/spreadsheets/d/1r4dPw1shIEy_W2BkfgPsihinwg-Nah654VlNTn8Gxo0/edit#gid=0
         metfrag_prec_type2mode = {
             # Positive mode
-            "[M+H]+": (1, True),
+            "[M+H]+": (1, True), "[M-H2O+H]+": (1, True), "[M-2H2O+H]+": (1, True), "[M+H-H2O]+": (1, True),
             "[M+NH4]+": (18, True),
             "[M+Na]+": (23, True),
             "[M+K]+": (39, True),
@@ -242,7 +242,7 @@ class MBSpectrum(object):
             "[M-H]-": (-1, False),
             "[M+Cl]-": (35, False),
             "[M+HCOO]-": (45, False), "[M+CHO2]-": (45, False),
-            "[M+CH3COO]-": (59, False), "[M+C2H3O2]-": (59, False),
+            "[M+CH3COO]-": (59, False), "[M+C2H3O2]-": (59, False), "[M+CH3COOH-H]-": (59, False),
             "[M]-": (0, False)  # intrinsically charged
         }
         try:
@@ -287,8 +287,10 @@ class MBSpectrum(object):
                                  % (len(score_types), len(score_weights)))
 
             # Sanitize pre-processing filters
-            pre_processing_filters = kwargs.get("MetFragPreProcessingCandidateFilter",
-                                                ["UnconnectedCompoundFilter", "IsotopeFilter"])
+            pre_processing_filters = kwargs.get(
+                "MetFragPreProcessingCandidateFilter",
+                ["UnconnectedCompoundFilter", "IsotopeFilter"]
+            )
 
             if not (isinstance(pre_processing_filters, list) or isinstance(pre_processing_filters, np.ndarray)):
                 raise ValueError("Pre-processing filters must be provided as list or numpy.ndarray.")

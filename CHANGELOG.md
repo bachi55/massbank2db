@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 0.7.1
+
+- Add support for some new adduct types for the MetFrag tool exporter (based on [this source](https://github.com/ipb-halle/MetFragRelaunched/blob/a61900b82c0cd5835f0b7d6ae822054b1e3eb104/MetFragTools/src/main/java/de/ipbhalle/metfrag/conversion/ConvertMGFtoMetFragRecord.java)) 
+
 ## Version 0.7.0
 **Feature release**
 
