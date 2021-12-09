@@ -63,7 +63,7 @@ class TestMBSpectrumParsing(unittest.TestCase):
                  (199.0315, 5538869.4),
                  (201.0474, 7384944.1)]
         spec = MBSpectrum("./example_massbank_records/EQ308406.txt")
-        self.assertEqual(peaks, list(spec.get_peak_list_as_tuples()))
+        self.assertEqual(peaks, spec.get_peaks())
 
         # Spectrum 2
         peaks = [
@@ -77,7 +77,7 @@ class TestMBSpectrumParsing(unittest.TestCase):
             (160.040200, 10392.000000),
             (161.043200, 1399.000000)]
         spec = MBSpectrum("./example_massbank_records/FIO00665.txt")
-        self.assertEqual(peaks, list(spec.get_peak_list_as_tuples()))
+        self.assertEqual(peaks, spec.get_peaks())
 
 
 class TestMBSpectrumToToolFormat(unittest.TestCase):
@@ -92,7 +92,7 @@ class TestMBSpectrumToToolFormat(unittest.TestCase):
 
         # check fragmentation peaks
         tmp = out["FIO00665.ms"].split("\n")
-        for idx, _peak in enumerate(spec.get_peak_list_as_tuples(), start=tmp.index(">ms2merged") + 1):
+        for idx, _peak in enumerate(spec.get_peaks(), start=tmp.index(">ms2merged") + 1):
             _mz, _int = tmp[idx].split(" ")
             self.assertEqual(_peak, (float(_mz), float(_int)))
 
@@ -106,7 +106,7 @@ class TestMBSpectrumToToolFormat(unittest.TestCase):
 
         # check fragmentation peaks
         tmp = out["EQ308406.ms"].split("\n")
-        for idx, _peak in enumerate(spec.get_peak_list_as_tuples(), start=tmp.index(">ms2merged") + 1):
+        for idx, _peak in enumerate(spec.get_peaks(), start=tmp.index(">ms2merged") + 1):
             _mz, _int = tmp[idx].split(" ")
             self.assertEqual(_peak, (float(_mz), float(_int)))
 
@@ -464,6 +464,20 @@ class TestMBSpectrumMerging(unittest.TestCase):
 
         np.testing.assert_almost_equal(mzs_ref, merged_spectrum.get_mz())
         np.testing.assert_almost_equal(ints_ref / 999, merged_spectrum.get_int())
+
+    def test_cfmid_output_parser(self):
+        spec = MBSpectrum.from_cfmid_output("example_cfmid_outputs/2931.txt", cfmid_4_format=True, merge_energies=False)
+
+        for i in range(3):
+            self.assertEqual("2931_%d" % i, spec[i].get("accession"))
+            self.assertEqual("energy%d" % i, spec[i].get("collision_energy"))
+
+        peaks_0 = [
+            (243.07, 6.2),
+            (271.06010, 100.0)
+        ]
+        self.assertEqual(len(peaks_0), len(spec[0].get_peaks()))
+        self.assertListEqual(peaks_0, spec[0].get_peaks())
 
 
 if __name__ == '__main__':

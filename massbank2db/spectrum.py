@@ -65,8 +65,8 @@ class MBSpectrum(object):
     def set(self, key, value):
         self._meta_information[key] = value
 
-    def get_peak_list_as_tuples(self):
-        return zip(self._mz, self._int)
+    def get_peaks(self):
+        return list(zip(self._mz, self._int))
 
     def get_mz(self):
         return self._mz
@@ -201,7 +201,7 @@ class MBSpectrum(object):
         # =======================
         if self.get("merged_peak_list", True):
             sirius_string += ">ms2merged\n"
-            sirius_string += "\n".join("%f %f" % (__mz, __int) for __mz, __int in self.get_peak_list_as_tuples())
+            sirius_string += "\n".join("%f %f" % (__mz, __int) for __mz, __int in self.get_peaks())
             sirius_string += "\n"
         else:
             for idx, ce in enumerate(self.get("collision_energy")):
@@ -602,6 +602,58 @@ class MBSpectrum(object):
 
         # Combine the accession predix with the hash sting
         return pref + hash_str
+
+    @staticmethod
+    def from_cfmid_output(ifn: str, cfmid_4_format: bool = True, merge_energies=True):
+        # Open CFM-ID output file
+        with open(ifn, "r") as ifile:
+            lines = ifile.readlines()
+
+        # Get spectra id from filename
+        accession = os.path.basename(ifn).split(os.extsep)[0]  # /path/to/file.txt --> file
+
+        # Collect the spectra for each energy
+        predicted_spectra = [MBSpectrum() for _ in range(3) ]
+
+        if cfmid_4_format:
+            # Load the meta-data (first 4 lines)
+            for i in range(3):
+                predicted_spectra[i].set("precursor_type", lines[0].split(" ")[2])
+                predicted_spectra[i].set("cfmid_version", lines[1].split(" ")[3])
+                predicted_spectra[i].set("smiles", lines[2].split("=")[1])
+                predicted_spectra[i].set("inchikey", lines[3].split("=")[1])
+            start_row = 4
+        else:
+            start_row = 0
+
+        for i in range(3):
+            predicted_spectra[i].set("collision_energy", "energy%d" % i)
+            predicted_spectra[i].set("accession", "{}_{}".format(accession, i))
+
+        # Load the spectra data
+        k = None
+        peaks = {"energy%d" % i: [] for i in range(3)}
+        for line in lines[start_row:]:
+            if line.startswith("energy"):
+                k = line.strip()
+                continue
+            else:
+                assert k is not None
+
+            # Split peak information
+            _mz, _int = line.strip().split(" ")
+            peaks[k].append((float(_mz), float(_int)))
+
+        # Add the peaks to the Spectra objects
+        for i in range(3):
+            _mzs, _ints = zip(*peaks["energy%d" % i])
+            predicted_spectra[i].set_mz(_mzs)
+            predicted_spectra[i].set_int(_ints)
+
+        if merge_energies:
+            predicted_spectra = MBSpectrum.merge_spectra(predicted_spectra, normalize_peaks_before_merge=False)
+
+        return predicted_spectra
 
 
 def mzClust_hclust(mzs, eppm, eabs):
