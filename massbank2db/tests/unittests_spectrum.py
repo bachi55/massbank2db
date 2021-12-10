@@ -466,18 +466,69 @@ class TestMBSpectrumMerging(unittest.TestCase):
         np.testing.assert_almost_equal(ints_ref / 999, merged_spectrum.get_int())
 
     def test_cfmid_output_parser(self):
+        # Reference peaks for the example spectrum 2931.txt
+        peaks_ref = [
+            [
+                (243.07, 6.2),
+                (271.06010, 100.0)
+            ],
+            [
+                (161.02332, 48.5),
+                (163.03897, 24.9),
+                (215.07027, 17.3),
+                (243.06519, 25.8),
+                (253.04954, 15.0),
+                (271.06010, 100.0)
+            ],
+            [
+                (65.03858, 39.7),
+                (75.02293, 17.6),
+                (77.03858, 34.4),
+                (93.03349, 20.4),
+                (109.02841, 25.7),
+                (111.04406, 49.2),
+                (113.05971, 19.1),
+                (121.02841, 46.3),
+                (123.04406, 23.2),
+                (131.01276, 34.6),
+                (133.02841, 33.4),
+                (135.04406, 22.4),
+                (137.02332, 100.0),
+                (161.02332, 65.0),
+                (163.03897, 26.2),
+                (177.01824, 25.9),
+                (187.03897, 21.4),
+                (189.05462, 23.3),
+                (197.02332, 18.0),
+                (201.05462, 25.9),
+                (211.03897, 38.6),
+                (213.05462, 82.4),
+                (215.07027, 30.6),
+                (225.05462, 71.4),
+                (241.04954, 15.4),
+                (243.06519, 17.8),
+                (253.04954, 17.9)
+            ]
+        ]
+
+        # Load the insilico spectrum (each energy separately)
         spec = MBSpectrum.from_cfmid_output("example_cfmid_outputs/2931.txt", cfmid_4_format=True, merge_energies=False)
 
         for i in range(3):
-            self.assertEqual("2931_%d" % i, spec[i].get("accession"))
+            self.assertEqual("ID2931%d" % i, spec[i].get("accession"))
             self.assertEqual("energy%d" % i, spec[i].get("collision_energy"))
 
-        peaks_0 = [
-            (243.07, 6.2),
-            (271.06010, 100.0)
-        ]
-        self.assertEqual(len(peaks_0), len(spec[0].get_peaks()))
-        self.assertListEqual(peaks_0, spec[0].get_peaks())
+        for i in range(3):
+            self.assertEqual(len(peaks_ref[i]), len(spec[i].get_peaks()))
+            self.assertListEqual(peaks_ref[i], spec[i].get_peaks())
+
+        # Load the insilico spectrum but merge the energies
+        spec = MBSpectrum.from_cfmid_output("example_cfmid_outputs/2931.txt", cfmid_4_format=True, merge_energies=True)
+        self.assertIsInstance(spec, MBSpectrum)
+        self.assertListEqual(["ID2931%d" % i for i in range(3)], spec.get("original_accessions"))
+
+        self.assertIn((65.03858, 39.7 / 100), spec.get_peaks())  # peak only appears in one energy
+        self.assertIn((161.02332, 65.0 / 100), spec.get_peaks())  # peak that appears in multiple energies
 
 
 if __name__ == '__main__':

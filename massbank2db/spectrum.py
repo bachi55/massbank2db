@@ -573,7 +573,7 @@ class MBSpectrum(object):
         # ----------------------------------------------------------------
         # Merge retention time information (all RTs are stored in minutes)
         # ----------------------------------------------------------------
-        if rt_agg_fun is not None:
+        if rt_agg_fun is not None and spec_out.get("retention_time") is not None:
             spec_out.set("retention_time", rt_agg_fun(spec_out.get("retention_time")))
 
         # -------------------------------------------------------------------------------
@@ -610,10 +610,10 @@ class MBSpectrum(object):
             lines = ifile.readlines()
 
         # Get spectra id from filename
-        accession = os.path.basename(ifn).split(os.extsep)[0]  # /path/to/file.txt --> file
+        accession = "ID" + os.path.basename(ifn).split(os.extsep)[0]  # /path/to/file.txt --> file
 
         # Collect the spectra for each energy
-        predicted_spectra = [MBSpectrum() for _ in range(3) ]
+        predicted_spectra = [MBSpectrum() for _ in range(3)]
 
         if cfmid_4_format:
             # Load the meta-data (first 4 lines)
@@ -628,7 +628,7 @@ class MBSpectrum(object):
 
         for i in range(3):
             predicted_spectra[i].set("collision_energy", "energy%d" % i)
-            predicted_spectra[i].set("accession", "{}_{}".format(accession, i))
+            predicted_spectra[i].set("accession", "{}{}".format(accession, i))
 
         # Load the spectra data
         k = None
