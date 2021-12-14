@@ -340,7 +340,7 @@ class MBSpectrum(object):
         for energy in ["energy0", "energy1", "energy2"]:
             peak_list += (energy + "\n")
             peak_list += "\n".join(["%f %f" % (mz, intensity) for mz, intensity in zip(self._mz, self._int)])
-            peak_list += "\n\n"
+            peak_list += "\n"
 
         peak_list_fn = self.get("accession") + ".txt"
         output = {
@@ -604,7 +604,7 @@ class MBSpectrum(object):
         return pref + hash_str
 
     @staticmethod
-    def from_cfmid_output(ifn: str, cfmid_4_format: bool = True, merge_energies=True):
+    def from_cfmid_output(ifn: str, cfmid_4_format: bool = True, merge_energies=True, eppm=20, eabs=0.001):
         # Open CFM-ID output file
         with open(ifn, "r") as ifile:
             lines = ifile.readlines()
@@ -651,7 +651,7 @@ class MBSpectrum(object):
             predicted_spectra[i].set_int(_ints)
 
         if merge_energies:
-            predicted_spectra = MBSpectrum.merge_spectra(predicted_spectra, normalize_peaks_before_merge=False)
+            predicted_spectra = MBSpectrum.merge_spectra(predicted_spectra, eppm=eppm, eabs=eabs)
 
         return predicted_spectra
 
