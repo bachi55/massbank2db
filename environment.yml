@@ -2,7 +2,7 @@ name: massbank2db
 channels:
   - conda-forge
 dependencies:
-  - conda-forge::python>=3.7
+  - conda-forge::python>=3.8
   - conda-forge::numpy
   - conda-forge::pandas
   - conda-forge::scipy
