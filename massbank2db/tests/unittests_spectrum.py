@@ -2,7 +2,7 @@
 #
 # The 'massbank2db' package can be used to an build SQLite DB from the Massbank MS/MS repository.
 #
-#     Copyright (C) 2020 - 2021  Eric Bach <eric.bach@aalto.fi>
+#     Copyright (C) 2020 - 2022  Eric Bach <eric.bach@aalto.fi>
 #
 #     This program is free software: you can redistribute it and/or modify
 #     it under the terms of the GNU General Public License as published by
@@ -121,11 +121,15 @@ class TestMBSpectrumToToolFormat(unittest.TestCase):
 
         self.assertIn(
             ">ms2merged",
-            MBSpectrum.merge_spectra(spectra, merge_peak_lists=True).to_sirius_format()["EA33002987.ms"])
+            MBSpectrum.merge_spectra(spectra, merge_peak_lists=True).to_sirius_format()["EA33002987.ms"]
+        )
 
         self.assertEqual(
             spec_cnt,
-            MBSpectrum.merge_spectra(spectra, merge_peak_lists=False).to_sirius_format()["EA33002987.ms"].count(">collision"))
+            MBSpectrum.merge_spectra(spectra, merge_peak_lists=False)
+                .to_sirius_format()["EA33002987.ms"]
+                .count(">ms2peaks")
+        )
 
     def test_to_sirius__gt_molecular_formula(self):
         acc = "EQ308406"
@@ -238,7 +242,7 @@ class TestMBSpectrumMerging(unittest.TestCase):
         self.assertEqual(rt_ref, merged_spectrum.get("retention_time"))
         self.assertEqual(precmz_ref, merged_spectrum.get("precursor_mz"))
         self.assertEqual(recordtitle_ref, merged_spectrum.get("record_title"))
-        self.assertEqual(ce_ref, merged_spectrum.get("collision_energy"))
+        self.assertEqual([ce_ref], merged_spectrum.get("collision_energy"))
 
     def test_metainformation_merging__EAX000401(self):
         # Load the list of spectra to merge: EA0004[01][0-9].txt --> EAX000401.txt
@@ -511,7 +515,7 @@ class TestMBSpectrumMerging(unittest.TestCase):
             ]
         ]
 
-        # Load the insilico spectrum (each energy separately)
+        # --- Load the insilico spectrum (each energy separately)
         spec = MBSpectrum.from_cfmid_output("example_cfmid_outputs/2931.txt", cfmid_4_format=True, merge_energies=False)
 
         for i in range(3):
@@ -522,13 +526,17 @@ class TestMBSpectrumMerging(unittest.TestCase):
             self.assertEqual(len(peaks_ref[i]), len(spec[i].get_peaks()))
             self.assertListEqual(peaks_ref[i], spec[i].get_peaks())
 
-        # Load the insilico spectrum but merge the energies
+        # --- Load the insilico spectrum and merge the energies into a single spectrum
         spec = MBSpectrum.from_cfmid_output("example_cfmid_outputs/2931.txt", cfmid_4_format=True, merge_energies=True)
+
         self.assertIsInstance(spec, MBSpectrum)
         self.assertListEqual(["ID2931%d" % i for i in range(3)], spec.get("original_accessions"))
 
-        self.assertIn((65.03858, 39.7 / 100), spec.get_peaks())  # peak only appears in one energy
-        self.assertIn((161.02332, 65.0 / 100), spec.get_peaks())  # peak that appears in multiple energies
+        # Peak only appears in one energy
+        self.assertIn((65.03858, 39.7 / 100), spec.get_peaks())
+
+        # Peak that appears in multiple energies
+        self.assertIn((161.02332, 65.0 / 100), spec.get_peaks())
 
 
 if __name__ == '__main__':
