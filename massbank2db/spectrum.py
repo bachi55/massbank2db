@@ -637,6 +637,9 @@ class MBSpectrum(object):
             if line.startswith("energy"):
                 k = line.strip()
                 continue
+            elif line == "\n" or line  == "":
+                # skip empty lines
+                continue
             else:
                 assert k is not None
 
@@ -647,6 +650,10 @@ class MBSpectrum(object):
         # Add the peaks to the Spectra objects
         for i in range(3):
             _mzs, _ints = zip(*peaks["energy%d" % i])
+
+            if len(_mzs) == 0:
+                LOGGER.warning("Empty spectrum for 'energy%d'. Filename: %s" % (i, os.path.basename(ifn)))
+
             predicted_spectra[i].set_mz(_mzs)
             predicted_spectra[i].set_int(_ints)
 
