@@ -114,13 +114,15 @@ class TestMBSpectrumToToolFormat(unittest.TestCase):
         spectra = []
         acc = []
         spec_cnt = 0
-        for mb_fn in glob.iglob(os.path.join("example_massbank_records", "EA0004[01][0-9].txt")):
+        original_accessions = [
+            'EA000412', 'EA000414', 'EA000401', 'EA000413', 'EA000408', 'EA000409', 'EA000405', 'EA000402', 'EA000406',
+            'EA000404', 'EA000411', 'EA000403', 'EA000407', 'EA000410'
+        ]
+        for oacc in original_accessions:
+            mb_fn = os.path.join("example_massbank_records", "%s.txt" % oacc)
             spectra.append(MBSpectrum(mb_fn))
             acc.append(spectra[-1].get("accession"))
             spec_cnt += 1
-
-        print(spec_cnt)
-        print(MBSpectrum.merge_spectra(spectra, merge_peak_lists=True).to_sirius_format().keys())
 
         self.assertIn(
             ">ms2merged",
