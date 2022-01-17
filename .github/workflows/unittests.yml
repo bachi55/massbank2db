@@ -48,7 +48,9 @@ jobs:
       # --------------------------------
       # Check the package version number
       - name: Package version number
-        run: python -c "from massbank2db import __version__; print('massbank2db-Package version:', __version__)"
+        run: |
+          ls /home/runner/work/massbank2db/massbank2db/massbank2db/
+          python -c "from massbank2db import __version__; print('massbank2db-Package version:', __version__)"
       # --------------------------------
 
       # -----------------
