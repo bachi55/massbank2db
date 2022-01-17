@@ -35,6 +35,8 @@ jobs:
           activate-environment: massbank2db
           environment-file: environment.yml
           channel-priority: strict
+          python-version: ${{ matrix.python-version }}
+          auto-update-conda: true
       # --------------------------------------------------
 
       # ------------------------
