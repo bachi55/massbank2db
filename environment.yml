@@ -1,8 +1,8 @@
 name: massbank2db
+channels:
+  - conda-forge
 dependencies:
-  - python
-  - numpy
-  - pandas
-  - scipy
-  - pip
-  - jupyterlab
+  - conda-forge::python>=3.7
+  - conda-forge::numpy
+  - conda-forge::pandas
+  - conda-forge::scipy

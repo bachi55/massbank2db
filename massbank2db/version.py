@@ -18,4 +18,4 @@
 #     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 ####
-__version__ = "0.7.1"
+__version__ = "0.8.0"

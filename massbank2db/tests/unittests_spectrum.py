@@ -2,7 +2,7 @@
 #
 # The 'massbank2db' package can be used to an build SQLite DB from the Massbank MS/MS repository.
 #
-#     Copyright (C) 2020 - 2021  Eric Bach <eric.bach@aalto.fi>
+#     Copyright (C) 2020 - 2022  Eric Bach <eric.bach@aalto.fi>
 #
 #     This program is free software: you can redistribute it and/or modify
 #     it under the terms of the GNU General Public License as published by
@@ -63,7 +63,7 @@ class TestMBSpectrumParsing(unittest.TestCase):
                  (199.0315, 5538869.4),
                  (201.0474, 7384944.1)]
         spec = MBSpectrum("./example_massbank_records/EQ308406.txt")
-        self.assertEqual(peaks, list(spec.get_peak_list_as_tuples()))
+        self.assertEqual(peaks, spec.get_peaks())
 
         # Spectrum 2
         peaks = [
@@ -77,7 +77,7 @@ class TestMBSpectrumParsing(unittest.TestCase):
             (160.040200, 10392.000000),
             (161.043200, 1399.000000)]
         spec = MBSpectrum("./example_massbank_records/FIO00665.txt")
-        self.assertEqual(peaks, list(spec.get_peak_list_as_tuples()))
+        self.assertEqual(peaks, spec.get_peaks())
 
 
 class TestMBSpectrumToToolFormat(unittest.TestCase):
@@ -92,7 +92,7 @@ class TestMBSpectrumToToolFormat(unittest.TestCase):
 
         # check fragmentation peaks
         tmp = out["FIO00665.ms"].split("\n")
-        for idx, _peak in enumerate(spec.get_peak_list_as_tuples(), start=tmp.index(">ms2merged") + 1):
+        for idx, _peak in enumerate(spec.get_peaks(), start=tmp.index(">ms2merged") + 1):
             _mz, _int = tmp[idx].split(" ")
             self.assertEqual(_peak, (float(_mz), float(_int)))
 
@@ -106,7 +106,7 @@ class TestMBSpectrumToToolFormat(unittest.TestCase):
 
         # check fragmentation peaks
         tmp = out["EQ308406.ms"].split("\n")
-        for idx, _peak in enumerate(spec.get_peak_list_as_tuples(), start=tmp.index(">ms2merged") + 1):
+        for idx, _peak in enumerate(spec.get_peaks(), start=tmp.index(">ms2merged") + 1):
             _mz, _int = tmp[idx].split(" ")
             self.assertEqual(_peak, (float(_mz), float(_int)))
 
@@ -121,11 +121,15 @@ class TestMBSpectrumToToolFormat(unittest.TestCase):
 
         self.assertIn(
             ">ms2merged",
-            MBSpectrum.merge_spectra(spectra, merge_peak_lists=True).to_sirius_format()["EA33002987.ms"])
+            MBSpectrum.merge_spectra(spectra, merge_peak_lists=True).to_sirius_format()["EA33002987.ms"]
+        )
 
         self.assertEqual(
             spec_cnt,
-            MBSpectrum.merge_spectra(spectra, merge_peak_lists=False).to_sirius_format()["EA33002987.ms"].count(">collision"))
+            MBSpectrum.merge_spectra(spectra, merge_peak_lists=False)
+                .to_sirius_format()["EA33002987.ms"]
+                .count(">ms2peaks")
+        )
 
     def test_to_sirius__gt_molecular_formula(self):
         acc = "EQ308406"
@@ -238,7 +242,7 @@ class TestMBSpectrumMerging(unittest.TestCase):
         self.assertEqual(rt_ref, merged_spectrum.get("retention_time"))
         self.assertEqual(precmz_ref, merged_spectrum.get("precursor_mz"))
         self.assertEqual(recordtitle_ref, merged_spectrum.get("record_title"))
-        self.assertEqual(ce_ref, merged_spectrum.get("collision_energy"))
+        self.assertEqual([ce_ref], merged_spectrum.get("collision_energy"))
 
     def test_metainformation_merging__EAX000401(self):
         # Load the list of spectra to merge: EA0004[01][0-9].txt --> EAX000401.txt
@@ -464,6 +468,75 @@ class TestMBSpectrumMerging(unittest.TestCase):
 
         np.testing.assert_almost_equal(mzs_ref, merged_spectrum.get_mz())
         np.testing.assert_almost_equal(ints_ref / 999, merged_spectrum.get_int())
+
+    def test_cfmid_output_parser(self):
+        # Reference peaks for the example spectrum 2931.txt
+        peaks_ref = [
+            [
+                (243.07, 6.2),
+                (271.06010, 100.0)
+            ],
+            [
+                (161.02332, 48.5),
+                (163.03897, 24.9),
+                (215.07027, 17.3),
+                (243.06519, 25.8),
+                (253.04954, 15.0),
+                (271.06010, 100.0)
+            ],
+            [
+                (65.03858, 39.7),
+                (75.02293, 17.6),
+                (77.03858, 34.4),
+                (93.03349, 20.4),
+                (109.02841, 25.7),
+                (111.04406, 49.2),
+                (113.05971, 19.1),
+                (121.02841, 46.3),
+                (123.04406, 23.2),
+                (131.01276, 34.6),
+                (133.02841, 33.4),
+                (135.04406, 22.4),
+                (137.02332, 100.0),
+                (161.02332, 65.0),
+                (163.03897, 26.2),
+                (177.01824, 25.9),
+                (187.03897, 21.4),
+                (189.05462, 23.3),
+                (197.02332, 18.0),
+                (201.05462, 25.9),
+                (211.03897, 38.6),
+                (213.05462, 82.4),
+                (215.07027, 30.6),
+                (225.05462, 71.4),
+                (241.04954, 15.4),
+                (243.06519, 17.8),
+                (253.04954, 17.9)
+            ]
+        ]
+
+        # --- Load the insilico spectrum (each energy separately)
+        spec = MBSpectrum.from_cfmid_output("example_cfmid_outputs/2931.txt", cfmid_4_format=True, merge_energies=False)
+
+        for i in range(3):
+            self.assertEqual("ID2931%d" % i, spec[i].get("accession"))
+            self.assertEqual("energy%d" % i, spec[i].get("collision_energy"))
+
+        for i in range(3):
+            self.assertEqual(len(peaks_ref[i]), len(spec[i].get_peaks()))
+            self.assertListEqual(peaks_ref[i], spec[i].get_peaks())
+
+        # --- Load the insilico spectrum and merge the energies into a single spectrum
+        spec = MBSpectrum.from_cfmid_output("example_cfmid_outputs/2931.txt", cfmid_4_format=True, merge_energies=True)
+
+        self.assertIsInstance(spec, MBSpectrum)
+        self.assertListEqual(["ID2931%d" % i for i in range(3)], spec.get("original_accessions"))
+
+        # Peak only appears in one energy
+        self.assertIn((65.03858, 39.7 / 100), spec.get_peaks())
+
+        # Peak that appears in multiple energies
+        self.assertIn((161.02332, 65.0 / 100), spec.get_peaks())
 
 
 if __name__ == '__main__':
