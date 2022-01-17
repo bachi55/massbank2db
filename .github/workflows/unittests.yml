@@ -1,0 +1,60 @@
+name: Unit-testing
+
+on:
+  push:
+    branches: [ master, develop ]
+  pull_request:
+    branches: [ master, develop ]
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [ '3.7', '3.8', '3.9', '3.10' ]
+
+    defaults:
+      run:
+        # Set up the default shell. This is needed for the Conda
+        shell: bash -l {0}
+
+    steps:
+      # ------------------------------------------------------------------------
+      # Checkout the branch from the github repository that triggered the action
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          ref: ${{ github.ref }}
+      # ------------------------------------------------------------------------
+
+      # --------------------------------------------------
+      # Setting up Python using a Conda environment
+      - name: Set up Conda with Python ${{ matrix.python-version }}
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          activate-environment: massbank2db
+          environment-file: environment.yml
+          channel-priority: strict
+      # --------------------------------------------------
+
+      # ------------------------
+      # Install the package
+      - name: Install the 'massbank2db' package
+        run: pip install .
+      # ------------------------
+
+      # --------------------------------
+      # Check the package version number
+      - name: Package version number
+        run: python -c "from massbank2db import __version__; print('massbank2db-Package version:', __version__)"
+      # --------------------------------
+
+      # -----------------
+      # Run the unittests
+      - name: Run all unittests
+        run: |
+          cd massbank2db/tests
+          python -m unittest -v unittests_parser.py
+          python -m unittest -v unittests_spectrum.py
+          python -m unittest -v unittests_utils.py
+      # -----------------
