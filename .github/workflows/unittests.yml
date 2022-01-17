@@ -42,15 +42,15 @@ jobs:
       # ------------------------
       # Install the package
       - name: Install the 'massbank2db' package
-        run: pip install .
+        run: |
+          python setup.py build_ext --inplace
+          pip install .
       # ------------------------
 
       # --------------------------------
       # Check the package version number
       - name: Package version number
         run: |
-          ls /home/runner/work/massbank2db/massbank2db/massbank2db/
-          ls /home/runner/work/massbank2db/build/lib.linux-x86_64-${{ matrix.python-version }}/massbank2db/
           python -c "from massbank2db import __version__; print('massbank2db-Package version:', __version__)"
       # --------------------------------
 
