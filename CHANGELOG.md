@@ -1,5 +1,10 @@
 # Changelog
 
+## Version 0.8.1
+**Minor changes**
+
+- add github workflow for unit-testing
+
 ## Version 0.8.0
 **Feature release**
 
