@@ -119,6 +119,9 @@ class TestMBSpectrumToToolFormat(unittest.TestCase):
             acc.append(spectra[-1].get("accession"))
             spec_cnt += 1
 
+        print(spec_cnt)
+        print(MBSpectrum.merge_spectra(spectra, merge_peak_lists=True).to_sirius_format().keys())
+
         self.assertIn(
             ">ms2merged",
             MBSpectrum.merge_spectra(spectra, merge_peak_lists=True).to_sirius_format()["EA33002987.ms"]
@@ -126,9 +129,7 @@ class TestMBSpectrumToToolFormat(unittest.TestCase):
 
         self.assertEqual(
             spec_cnt,
-            MBSpectrum.merge_spectra(spectra, merge_peak_lists=False)
-                .to_sirius_format()["EA33002987.ms"]
-                .count(">ms2peaks")
+            MBSpectrum.merge_spectra(spectra, merge_peak_lists=False).to_sirius_format()["EA33002987.ms"].count(">ms2peaks")
         )
 
     def test_to_sirius__gt_molecular_formula(self):
