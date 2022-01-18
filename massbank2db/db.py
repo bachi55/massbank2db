@@ -2,7 +2,7 @@
 #
 # The 'massbank2db' package can be used to an build SQLite DB from the Massbank MS/MS repository.
 #
-#     Copyright (C) 2020 - 2021  Eric Bach <eric.bach@aalto.fi>
+#     Copyright (C) 2020 - 2022  Eric Bach <eric.bach@aalto.fi>
 #
 #     This program is free software: you can redistribute it and/or modify
 #     it under the terms of the GNU General Public License as published by
@@ -774,38 +774,3 @@ class MassbankDB(object):
         :return: SQLite ready string for 'in' statement
         """
         return "(" + ",".join(["'%s'" % li for li in np.atleast_1d(li)]) + ")"
-
-            
-if __name__ == "__main__":
-    LOGGER.setLevel(logging.INFO)
-
-    # Load list of datasets provided by MassBank
-    massbank_dir = "/home/bach/Documents/doctoral/data/MassBank-data_bachi55"
-    mbds = pd.read_csv(os.path.join(massbank_dir, "List_of_Contributors_Prefixes_and_Projects.md"),
-                       sep="|", skiprows=2, header=None) \
-        .iloc[:, [1, 4]] \
-        .applymap(str.strip) \
-        .rename({1: "Contributor", 4: "AccPref"}, axis=1)  # type: pd.DataFrame
-
-    # Filename of the MassBank (output) DB
-    mb_dbfn = "tests/test_DB.sqlite"
-    with MassbankDB(mb_dbfn) as mbdb:
-        mbdb.initialize_tables(reset=True)
-
-    # Filename of the local PubChem DB
-    pc_dbfn = "/home/bach/Documents/doctoral/projects/local_pubchem_db/db_files/pubchem_01-02-2021.sqlite"
-
-    # Insert spectra into the MassBank DB
-    for idx, row in mbds.iterrows():
-        LOGGER.info("== Process Dataset: {} ({} / {}) ==".format(row["Contributor"], idx + 1, len(mbds)))
-
-        for pref in map(str.strip, row["AccPref"].split(",")):
-            LOGGER.info("-- Process prefix: {}".format(pref))
-            with MassbankDB(mb_dbfn) as mbdb:
-                mbdb.insert_dataset(pref, row["Contributor"], massbank_dir, pc_dbfn=pc_dbfn,
-                                    use_pubchem_structure_info=True)
-
-    # Filter the database
-    with MassbankDB(mb_dbfn) as mbdb:
-        mbdb.filter_spectra_by_mass_error(max_exact_mass_error_ppm=20) \
-            .filter_datasets_by_number_of_unique_compounds(min_number_of_unique_compounds_per_dataset=50)
