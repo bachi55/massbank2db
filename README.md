@@ -128,4 +128,15 @@ python generate_massbank_sqlite.py /path/to/MassBank-data /tmp/massbank.sqlite -
 
 ## Citing the package
 
-TODO
+If you use this package, please cite:
+
+```bibtex
+@software{massbank2db,
+  author = {Bach, Eric},
+  month = {1},
+  title = {{massbank2db: Build a machine learning ready SQLite database from MassBank.}},
+  url = {https://github.com/bachi55/massbank2db},
+  version = {0.9.0},
+  year = {2022}
+} 
+```
