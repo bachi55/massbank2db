@@ -26,7 +26,6 @@ import pandas as pd
 
 from massbank2db.spectrum import MBSpectrum
 
-
 class TestMBSpectrumInfoSanitizer(unittest.TestCase):
     def test_rt_sanitizer(self):
         out = MBSpectrum._sanitize_meta_information({"retention_time": ("430", "")})
@@ -62,7 +61,7 @@ class TestMBSpectrumParsing(unittest.TestCase):
                  (193.0767, 1661789.6),
                  (199.0315, 5538869.4),
                  (201.0474, 7384944.1)]
-        spec = MBSpectrum("./example_massbank_records/EQ308406.txt")
+        spec = MBSpectrum(os.path.join(os.path.dirname(__file__), "example_massbank_records", "EQ308406.txt"))
         self.assertEqual(peaks, spec.get_peaks())
 
         # Spectrum 2
@@ -76,14 +75,14 @@ class TestMBSpectrumParsing(unittest.TestCase):
             (159.032400, 1732.000000),
             (160.040200, 10392.000000),
             (161.043200, 1399.000000)]
-        spec = MBSpectrum("./example_massbank_records/FIO00665.txt")
+        spec = MBSpectrum(os.path.join(os.path.dirname(__file__), "example_massbank_records", "FIO00665.txt"))
         self.assertEqual(peaks, spec.get_peaks())
 
 
 class TestMBSpectrumToToolFormat(unittest.TestCase):
     def test_to_sirius(self):
         # Spectrum 1 -------------------
-        spec = MBSpectrum("./example_massbank_records/FIO00665.txt")
+        spec = MBSpectrum(os.path.join(os.path.dirname(__file__), "example_massbank_records", "FIO00665.txt"))
         out = spec.to_sirius_format()
         self.assertIn("FIO00665.ms", out)
         self.assertIn("FIO00665.tsv", out)
@@ -97,7 +96,7 @@ class TestMBSpectrumToToolFormat(unittest.TestCase):
             self.assertEqual(_peak, (float(_mz), float(_int)))
 
         # Spectrum 2 -------------------
-        spec = MBSpectrum("./example_massbank_records/EQ308406.txt")
+        spec = MBSpectrum(os.path.join(os.path.dirname(__file__), "example_massbank_records", "EQ308406.txt"))
         out = spec.to_sirius_format()
         self.assertIn("EQ308406.ms", out)
         self.assertIn("EQ308406.tsv", out)
@@ -119,7 +118,7 @@ class TestMBSpectrumToToolFormat(unittest.TestCase):
             'EA000404', 'EA000411', 'EA000403', 'EA000407', 'EA000410'
         ]
         for oacc in original_accessions:
-            mb_fn = os.path.join("example_massbank_records", "%s.txt" % oacc)
+            mb_fn = os.path.join(os.path.dirname(__file__), "example_massbank_records", "%s.txt" % oacc)
             spectra.append(MBSpectrum(mb_fn))
             acc.append(spectra[-1].get("accession"))
             spec_cnt += 1
@@ -136,29 +135,42 @@ class TestMBSpectrumToToolFormat(unittest.TestCase):
 
     def test_to_sirius__gt_molecular_formula(self):
         acc = "EQ308406"
-        self.assertIn("#formula",
-                      MBSpectrum("./example_massbank_records/%s.txt" % acc).to_sirius_format()[acc + ".ms"])
-        self.assertNotIn(">formula",
-                         MBSpectrum("./example_massbank_records/%s.txt" % acc).to_sirius_format()[acc + ".ms"])
-        self.assertNotIn("#formula",
-                         MBSpectrum("./example_massbank_records/%s.txt" % acc)
-                            .to_sirius_format(add_gt_molecular_formula=True)[acc + ".ms"])
-        self.assertIn(">formula",
-                      MBSpectrum("./example_massbank_records/%s.txt" % acc)
-                         .to_sirius_format(add_gt_molecular_formula=True)[acc + ".ms"])
+        self.assertIn(
+            "#formula",
+            MBSpectrum(os.path.join(os.path.dirname(__file__), "example_massbank_records", "%s.txt" % acc))
+                .to_sirius_format()[acc + ".ms"]
+        )
+        self.assertNotIn(
+            ">formula",
+            MBSpectrum(os.path.join(os.path.dirname(__file__), "example_massbank_records", "%s.txt" % acc))
+                .to_sirius_format()[acc + ".ms"]
+        )
+        self.assertNotIn(
+            "#formula",
+            MBSpectrum(os.path.join(os.path.dirname(__file__), "example_massbank_records", "%s.txt" % acc))
+                .to_sirius_format(add_gt_molecular_formula=True)[acc + ".ms"]
+        )
+        self.assertIn(
+            ">formula",
+            MBSpectrum(os.path.join(os.path.dirname(__file__), "example_massbank_records", "%s.txt" % acc))
+                .to_sirius_format(add_gt_molecular_formula=True)[acc + ".ms"]
+        )
 
     def test_to_sirius__custom_candidate_db(self):
         # Spectrum 1 -------------------
-        spec = MBSpectrum("./example_massbank_records/FIO00665.txt")
+        spec = MBSpectrum(os.path.join(os.path.dirname(__file__), "example_massbank_records", "FIO00665.txt"))
         out = spec.to_sirius_format(
-            molecular_candidates=pd.read_csv("./example_massbank_records/FIO00665.tsv", sep="\t"))
+            molecular_candidates=pd.read_csv(
+                os.path.join(os.path.dirname(__file__), "example_massbank_records", "FIO00665.tsv"), sep="\t"
+            )
+        )
         self.assertIn("FIO00665.ms", out)
         self.assertIn("FIO00665.tsv", out)
         self.assertIsNotNone(out["FIO00665.tsv"])
 
     def test_to_metfrag(self):
         # Spectrum 1 --------------------
-        out = MBSpectrum("./example_massbank_records/FIO00665.txt").to_metfrag_format(
+        out = MBSpectrum(os.path.join(os.path.dirname(__file__), "example_massbank_records", "FIO00665.txt")).to_metfrag_format(
             **{"MetFragScoreWeights": [0.8, 0.2],
                "MetFragScoreTypes": ["FragmenterScore", "PubChemNumberPatents"],
                "LocalDatabasePath": "/path/to/db",
@@ -176,7 +188,7 @@ class TestMBSpectrumToToolFormat(unittest.TestCase):
         self.assertIn("IsPositiveIonMode=False\n", out["FIO00665.conf"])
 
         # Spectrum 2 --------------------
-        out = MBSpectrum("./example_massbank_records/EQ308406.txt").to_metfrag_format(
+        out = MBSpectrum(os.path.join(os.path.dirname(__file__), "example_massbank_records", "EQ308406.txt")).to_metfrag_format(
             **{"MetFragScoreWeights": [1.0],
                "MetFragScoreTypes": ["FragmenterScore"],
                "LocalDatabasePath": "/path/to/db",
@@ -196,7 +208,7 @@ class TestMBSpectrumToToolFormat(unittest.TestCase):
         # Spectrum 3 --------------------
         spectra = []
         acc = []
-        for mb_fn in glob.iglob(os.path.join("example_massbank_records", "EA0004[01][0-9].txt")):
+        for mb_fn in glob.iglob(os.path.join(os.path.dirname(__file__), "example_massbank_records", "EA0004[01][0-9].txt")):
             spectra.append(MBSpectrum(mb_fn))
             acc.append(spectra[-1].get("accession"))
 
@@ -223,7 +235,7 @@ class TestMBSpectrumToToolFormat(unittest.TestCase):
 class TestMBSpectrumMerging(unittest.TestCase):
     def test_metainformation_merging__FIO00665(self):
         # Apply merge function to a single spectrum
-        mb_fn = os.path.join("example_massbank_records", "FIO00665.txt")
+        mb_fn = os.path.join(os.path.dirname(__file__), "example_massbank_records", "FIO00665.txt")
         spec = MBSpectrum(mb_fn)
         spectra = [spec]
         acc_ref = [os.path.basename(mb_fn).split(".")[0]]
@@ -255,7 +267,7 @@ class TestMBSpectrumMerging(unittest.TestCase):
         precmz_ref = []
         recordtitle_ref = []
         ce_ref = []
-        for mb_fn in glob.iglob(os.path.join("example_massbank_records", "EA0004[01][0-9].txt")):
+        for mb_fn in glob.iglob(os.path.join(os.path.dirname(__file__), "example_massbank_records", "EA0004[01][0-9].txt")):
             spectra.append(MBSpectrum(mb_fn))
 
             # collect some reference meta-information
@@ -300,7 +312,7 @@ class TestMBSpectrumMerging(unittest.TestCase):
         """
         # Load the list of spectra to merge: EA0004[01][0-9].txt --> EAX000401.txt
         spectra = []
-        for mb_fn in glob.iglob(os.path.join("example_massbank_records", "EA0004[01][0-9].txt")):
+        for mb_fn in glob.iglob(os.path.join(os.path.dirname(__file__), "example_massbank_records", "EA0004[01][0-9].txt")):
             spectra.append(MBSpectrum(mb_fn))
 
         # Run the spectra merging using hierarchical clustering
@@ -349,7 +361,7 @@ class TestMBSpectrumMerging(unittest.TestCase):
         """
         # Load the list of spectra to merge: EA0004[01][0-9].txt --> EAX000401.txt
         spectra = []
-        for mb_fn in glob.iglob(os.path.join("example_massbank_records", "EA0004[01][0-9].txt")):
+        for mb_fn in glob.iglob(os.path.join(os.path.dirname(__file__), "example_massbank_records", "EA0004[01][0-9].txt")):
             spectra.append(MBSpectrum(mb_fn))
 
         # Run the spectra merging using hierarchical clustering
@@ -396,7 +408,7 @@ class TestMBSpectrumMerging(unittest.TestCase):
         """
         # Load the list of spectra to merge: EA2815[56][0-9].txt --> EAX281502.txt
         spectra = []
-        for mb_fn in glob.iglob(os.path.join("example_massbank_records", "EA2815[56][0-9].txt")):
+        for mb_fn in glob.iglob(os.path.join(os.path.dirname(__file__), "example_massbank_records", "EA2815[56][0-9].txt")):
             spectra.append(MBSpectrum(mb_fn))
 
         # Run the spectra merging using hierarchical clustering
@@ -454,7 +466,7 @@ class TestMBSpectrumMerging(unittest.TestCase):
 
         # Load the list of spectra to merge: EA0004[56][0-9].txt --> EAX000402.txt
         spectra = []
-        for mb_fn in glob.iglob(os.path.join("example_massbank_records", "EA0004[56][0-9].txt")):
+        for mb_fn in glob.iglob(os.path.join(os.path.dirname(__file__), "example_massbank_records", "EA0004[56][0-9].txt")):
             spectra.append(MBSpectrum(mb_fn))
 
         # Run the spectra merging using hierarchical clustering
@@ -519,7 +531,10 @@ class TestMBSpectrumMerging(unittest.TestCase):
         ]
 
         # --- Load the insilico spectrum (each energy separately)
-        spec = MBSpectrum.from_cfmid_output("example_cfmid_outputs/2931.txt", cfmid_4_format=True, merge_energies=False)
+        spec = MBSpectrum.from_cfmid_output(
+            os.path.join(os.path.dirname(__file__), "example_cfmid_outputs", "2931.txt"),
+            cfmid_4_format=True, merge_energies=False
+        )
 
         for i in range(3):
             self.assertEqual("ID2931%d" % i, spec[i].get("accession"))
@@ -530,7 +545,10 @@ class TestMBSpectrumMerging(unittest.TestCase):
             self.assertListEqual(peaks_ref[i], spec[i].get_peaks())
 
         # --- Load the insilico spectrum and merge the energies into a single spectrum
-        spec = MBSpectrum.from_cfmid_output("example_cfmid_outputs/2931.txt", cfmid_4_format=True, merge_energies=True)
+        spec = MBSpectrum.from_cfmid_output(
+            os.path.join(os.path.dirname(__file__), "example_cfmid_outputs", "2931.txt"),
+            cfmid_4_format=True, merge_energies=True
+        )
 
         self.assertIsInstance(spec, MBSpectrum)
         self.assertListEqual(["ID2931%d" % i for i in range(3)], spec.get("original_accessions"))
