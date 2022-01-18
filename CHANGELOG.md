@@ -1,5 +1,16 @@
 # Changelog
 
+## Version 0.9.0
+**Feature release**
+
+- Improved readme
+- Added script to build the MassBank DB
+- Added the CITATION.cff file
+
+**Minor**
+
+- Test file paths in the unittests are not set relative 
+
 ## Version 0.8.1
 **Minor changes**
 
